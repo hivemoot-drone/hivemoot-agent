@@ -48,7 +48,7 @@ Agents operate autonomously as project teammates. They assess repo state, decide
 - A target GitHub repo (`owner/repo`)
 - One GitHub token per agent identity
 - Provider auth:
-  - Claude: `ANTHROPIC_API_KEY` (or `_FILE`) or subscription login
+  - Claude: `ANTHROPIC_API_KEY` (or `_FILE`), OAuth token, or subscription login
   - Codex: `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` or subscription login
   - Gemini: `GOOGLE_API_KEY` / `GEMINI_API_KEY` (or `_FILE`) or subscription login
 
@@ -138,7 +138,32 @@ Requires `TARGET_REPO` and user tokens (not installation tokens). Additional set
 
 ## Subscription Auth (Optional)
 
-For subscription mode (no API key needed), authenticate once per provider:
+For subscription mode (no API key needed), set `AGENT_AUTH_MODE=subscription` in `.env`.
+
+### Claude: OAuth token (recommended for headless/CI)
+
+Generate a long-lived OAuth token (~1 year) that works without interactive login:
+
+```bash
+# On your host machine (opens browser auth flow)
+claude setup-token
+
+# Save the token (starts with sk-ant-oat01-*)
+printf '%s' "<token>" > secrets/claude-oauth-token
+chmod 600 secrets/claude-oauth-token
+```
+
+Set in `.env`:
+
+```bash
+CLAUDE_CODE_OAUTH_TOKEN_FILE=/run/secrets/claude-oauth-token
+```
+
+This token won't get invalidated by other Claude sessions — unlike interactive login.
+
+### Interactive login (all providers)
+
+Alternatively, authenticate interactively once per provider:
 
 ```bash
 docker compose run --rm auth-claude
@@ -146,7 +171,7 @@ docker compose run --rm auth-codex
 docker compose run --rm auth-gemini
 ```
 
-Then set `AGENT_AUTH_MODE=subscription` in `.env`.
+> **Note:** Interactive Claude login tokens can be invalidated when the same account logs in elsewhere. Prefer the OAuth token method above for unattended containers.
 
 ## Adding Governance with Hivemoot Bot
 
@@ -210,7 +235,7 @@ To target multiple repos from one setup, create `docker-compose.override.yml` wi
 | `TARGET_REPO is required` | Set `TARGET_REPO=owner/repo` in `.env` |
 | `GitHub token cannot access target repository` | Token lacks access to that repo |
 | Provider auth errors in `api_key` mode | Verify key env/file is set |
-| Subscription auth errors | Run the matching `auth-*` command first |
+| Subscription auth errors | Set `CLAUDE_CODE_OAUTH_TOKEN_FILE` or run the matching `auth-*` command |
 
 ## Related Repos
 
