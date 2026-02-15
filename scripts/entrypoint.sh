@@ -30,10 +30,23 @@ for secret_var in \
   OPENAI_API_KEY \
   GOOGLE_API_KEY \
   GEMINI_API_KEY \
-  ANTHROPIC_API_KEY
+  ANTHROPIC_API_KEY \
+  CLAUDE_CODE_OAUTH_TOKEN
 do
   load_secret_from_file "$secret_var"
 done
+
+# When CLAUDE_CODE_OAUTH_TOKEN is set (from secrets file), write it into
+# ~/.claude/.credentials.json so Claude Code uses it instead of any stale
+# credentials left in the Docker volume from previous interactive sessions.
+if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  mkdir -p "${HOME}/.claude"
+  cat > "${HOME}/.claude/.credentials.json" <<CREDS
+{"claudeAiOauth":{"accessToken":"${CLAUDE_CODE_OAUTH_TOKEN}","expiresAt":4102444800000}}
+CREDS
+  chmod 600 "${HOME}/.claude/.credentials.json"
+  log "Wrote Claude OAuth credentials from secret"
+fi
 
 mode="${RUN_MODE:-once}"
 case "$mode" in
