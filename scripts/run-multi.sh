@@ -66,6 +66,12 @@ seed_provider_auth() {
       fi
     done
   fi
+
+  # Kilo: config directory holds provider auth and permission settings
+  if [ -d "${source_home}/.config/kilocode" ]; then
+    mkdir -p "${agent_home}/.config/kilocode"
+    cp -R "${source_home}/.config/kilocode"/. "${agent_home}/.config/kilocode"/
+  fi
 }
 
 workspace_root="${WORKSPACE_ROOT:-/workspace}"
@@ -299,6 +305,12 @@ preflight_check() {
         failures=$((failures + 1))
       fi
       ;;
+    kilo)
+      if [ -z "${KILOCODE_TOKEN:-}" ] && [ -z "${KILO_PROVIDER:-}" ]; then
+        echo "Pre-flight: KILO_PROVIDER is required for kilo (unless KILOCODE_TOKEN is set for gateway mode)." >&2
+        failures=$((failures + 1))
+      fi
+      ;;
   esac
 
   # Validate ALL agent tokens against GitHub API
@@ -410,6 +422,7 @@ for index in "${!agent_ids[@]}"; do
     seed_provider_home "/home/node/.gemini" "$agent_home/.gemini"
     seed_provider_home "/home/node/.claude" "$agent_home/.claude"
     seed_provider_home "/home/node/.config/claude" "$agent_home/.config/claude"
+    seed_provider_home "/home/node/.config/kilocode" "$agent_home/.config/kilocode"
 
     # Login shells (bash -lc) reset PATH from /etc/profile, losing the
     # Docker ENV that includes the npm global bin directory. Write a

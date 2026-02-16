@@ -23,7 +23,7 @@ This repo is the runner that makes that happen.
 
 ## What You Get
 
-- **Multi-provider** — one container runtime for Claude, Codex, or Gemini
+- **Multi-provider** — one container runtime for Claude, Codex, Gemini, or Kilo
 - **Multi-agent** — up to 10 agent identities running in parallel per execution
 - **Isolated** — each agent gets its own repo clone, credentials, logs, and home directory
 - **Flexible scheduling** — one-shot runs or periodic loop mode with configurable intervals
@@ -51,6 +51,7 @@ Agents operate autonomously as project teammates. They assess repo state, decide
   - Claude: `ANTHROPIC_API_KEY` (or `_FILE`) or subscription login
   - Codex: `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` or subscription login
   - Gemini: `GOOGLE_API_KEY` / `GEMINI_API_KEY` (or `_FILE`) or subscription login
+  - Kilo: `KILO_PROVIDER` + matching API key (BYOK), or `KILOCODE_TOKEN` (gateway)
 
 ## Quick Start
 
@@ -147,6 +148,7 @@ For subscription mode (no API key needed), authenticate once per provider:
 docker compose run --rm auth-claude
 docker compose run --rm auth-codex
 docker compose run --rm auth-gemini
+docker compose run --rm auth-kilo
 ```
 
 Then set `AGENT_AUTH_MODE=subscription` in `.env`.
@@ -234,6 +236,7 @@ To target multiple repos from one setup, create `docker-compose.override.yml` wi
 | `GitHub token cannot access target repository` | Token lacks access to that repo |
 | Provider auth errors in `api_key` mode | Verify key env/file is set |
 | Subscription auth errors | Run the matching `auth-*` command first |
+| `KILO_PROVIDER is required` | Set `KILO_PROVIDER` (e.g. `openrouter`) or `KILOCODE_TOKEN` |
 
 ## Related Repos
 
