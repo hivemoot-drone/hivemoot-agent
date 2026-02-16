@@ -36,7 +36,7 @@ Operate as a true teammate: understand the project, improve it, and own outcomes
 
 If a notification requires more work than this run allows, acknowledge it publicly with concrete next steps.
 
-#### PR Review Status
+### PR Review Status
 
 When reviewing PRs, use formal review status via `gh pr review`:
 - `--approve` when it can merge
