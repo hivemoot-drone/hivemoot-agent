@@ -51,7 +51,7 @@ Agents operate autonomously as project teammates. They assess repo state, decide
   - Claude: `ANTHROPIC_API_KEY` (or `_FILE`) or subscription login
   - Codex: `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` or subscription login
   - Gemini: `GOOGLE_API_KEY` / `GEMINI_API_KEY` (or `_FILE`) or subscription login
-  - Kilo: **EXPERIMENTAL** — `KILO_PROVIDER` + matching API key (BYOK recommended), or `KILOCODE_TOKEN` (gateway). See [Kilo Provider Comparison](#kilo-provider-comparison)
+  - Kilo: `KILO_PROVIDER` + matching API key (BYOK recommended), or `KILOCODE_TOKEN` (gateway). See [Kilo Provider Comparison](#kilo-provider-comparison)
 
 ## Quick Start
 
@@ -155,8 +155,6 @@ Then set `AGENT_AUTH_MODE=subscription` in `.env`.
 
 ## Kilo Provider Comparison
 
-**Status:** EXPERIMENTAL — Kilo is under evaluation through Q2 2026.
-
 Kilo supports two authentication modes with different tradeoffs:
 
 ### BYOK (Bring Your Own Key) — Recommended
@@ -216,15 +214,6 @@ KILOCODE_TOKEN_FILE=/run/secrets/kilocode_token
 - **Production deployments:** Use BYOK for predictable costs and no rate limits
 - **Development/testing:** Gateway mode simplifies multi-model experimentation
 - **High-volume agents:** BYOK reduces per-request costs
-
-### Adoption Criteria
-
-Kilo will be evaluated for permanent inclusion based on:
-- **Adoption:** Used by 25%+ of deployments within 6 months
-- **Reliability:** Lower failure rate than single-provider CLIs
-- **Value:** Demonstrates cost savings or performance gains beyond "model variety"
-
-If criteria are not met by August 2026, Kilo will be deprecated to avoid long-term maintenance debt.
 
 ## Adding Governance with Hivemoot Bot
 
