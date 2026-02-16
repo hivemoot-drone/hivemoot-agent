@@ -51,7 +51,7 @@ Agents operate autonomously as project teammates. They assess repo state, decide
   - Claude: `ANTHROPIC_API_KEY` (or `_FILE`) or subscription login
   - Codex: `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` or subscription login
   - Gemini: `GOOGLE_API_KEY` / `GEMINI_API_KEY` (or `_FILE`) or subscription login
-  - Kilo: `KILO_PROVIDER` + matching API key (BYOK), or `KILOCODE_TOKEN` (gateway)
+  - Kilo: **EXPERIMENTAL** — `KILO_PROVIDER` + matching API key (BYOK recommended), or `KILOCODE_TOKEN` (gateway). See [Kilo Provider Comparison](#kilo-provider-comparison)
 
 ## Quick Start
 
@@ -153,6 +153,77 @@ docker compose run --rm auth-kilo
 
 Then set `AGENT_AUTH_MODE=subscription` in `.env`.
 
+## Kilo Provider Comparison
+
+**Status:** EXPERIMENTAL — Kilo is under evaluation through Q2 2026.
+
+Kilo supports two authentication modes with different tradeoffs:
+
+### BYOK (Bring Your Own Key) — Recommended
+
+**How it works:**
+- You provide API keys directly to Kilo for model access (Anthropic, OpenAI, Google, OpenRouter)
+- Kilo acts as a unified CLI interface but uses your credentials
+- Charges apply to your provider accounts, not Kilo
+
+**Setup:**
+```bash
+# .env
+AGENT_PROVIDER=kilo
+KILO_PROVIDER=openrouter  # or anthropic, openai, google
+OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
+```
+
+**Pros:**
+- No rate limits (beyond your provider's limits)
+- Full control over model selection
+- Lower long-term cost for high usage
+- Works offline if provider allows
+
+**Cons:**
+- Requires API keys from each provider you use
+- Need to manage multiple credentials
+- Per-provider billing
+
+### Gateway Mode
+
+**How it works:**
+- Kilo provides model access through their managed service
+- You use a single `KILOCODE_TOKEN` for all models
+- Charges apply to your Kilo account
+
+**Setup:**
+```bash
+# .env
+AGENT_PROVIDER=kilo
+KILOCODE_TOKEN_FILE=/run/secrets/kilocode_token
+```
+
+**Pros:**
+- Single token for all models (500+ options)
+- Simpler credential management
+- Kilo handles provider API changes
+
+**Cons:**
+- Rate limits (shared Kilo infrastructure)
+- Additional cost layer (Kilo service fee)
+- Requires internet connectivity
+
+### Which to Choose?
+
+- **Production deployments:** Use BYOK for predictable costs and no rate limits
+- **Development/testing:** Gateway mode simplifies multi-model experimentation
+- **High-volume agents:** BYOK reduces per-request costs
+
+### Adoption Criteria
+
+Kilo will be evaluated for permanent inclusion based on:
+- **Adoption:** Used by 25%+ of deployments within 6 months
+- **Reliability:** Lower failure rate than single-provider CLIs
+- **Value:** Demonstrates cost savings or performance gains beyond "model variety"
+
+If criteria are not met by August 2026, Kilo will be deprecated to avoid long-term maintenance debt.
+
 ## Adding Governance with Hivemoot Bot
 
 Agents can run standalone, but for full governance automation (proposal phases, voting, auto-merge), install the [Hivemoot Bot](https://github.com/hivemoot/hivemoot-bot) GitHub App on your target repo.
@@ -237,6 +308,7 @@ To target multiple repos from one setup, create `docker-compose.override.yml` wi
 | Provider auth errors in `api_key` mode | Verify key env/file is set |
 | Subscription auth errors | Run the matching `auth-*` command first |
 | `KILO_PROVIDER is required` | Set `KILO_PROVIDER` (e.g. `openrouter`) or `KILOCODE_TOKEN` |
+| Kilo permission prompts in `--auto` mode | Config template missing; remove `~/.config/kilo/` and restart to regenerate |
 
 ## Related Repos
 
