@@ -29,6 +29,88 @@ seed_provider_home() {
   fi
 }
 
+# Auto-generate OpenCode config and auth.json if missing. Config holds
+# permissions and model selection; auth.json holds the actual API key
+# (OpenCode reads credentials from auth.json, NOT from provider options).
+# shellcheck disable=SC2317,SC2329  # invoked from seed_provider_auth
+generate_opencode_config() {
+  local target_home="$1"
+  local config_dir="${target_home}/.config/opencode"
+  local config_file="${config_dir}/opencode.json"
+  local auth_dir="${target_home}/.local/share/opencode"
+  local auth_file="${auth_dir}/auth.json"
+
+  if [ "${AGENT_PROVIDER:-}" != "opencode" ]; then
+    return 0
+  fi
+
+  # Generate config (permissions + model) if missing
+  if [ ! -f "$config_file" ]; then
+    mkdir -p "$config_dir"
+
+    if [ ! -f /opt/hivemoot-agent/scripts/opencode-config-template.json ]; then
+      log "Warning: OpenCode config template not found; skipping config generation"
+      return 0
+    fi
+
+    cp /opt/hivemoot-agent/scripts/opencode-config-template.json "$config_file"
+
+    local opencode_provider="${OPENCODE_PROVIDER:-}"
+    if [ -n "$opencode_provider" ]; then
+      local model_default=""
+      local provider_config=""
+      case "$opencode_provider" in
+        zai)
+          model_default="${OPENCODE_MODEL:-zai/glm-5}"
+          provider_config='{"zai":{"name":"Z.AI","npm":"@ai-sdk/openai-compatible","options":{"baseURL":"https://api.z.ai/api/coding/paas/v4"},"models":{"glm-5":{"id":"glm-5","name":"GLM-5"}}}}'
+          ;;
+        *)
+          model_default="${OPENCODE_MODEL:-}"
+          ;;
+      esac
+
+      local merge_expr='. + {"model": $model}'
+      if [ -n "$provider_config" ]; then
+        merge_expr='. + {"model": $model, "provider": $provider}'
+      fi
+
+      if [ -n "$model_default" ]; then
+        if ! jq --arg model "$model_default" --argjson provider "${provider_config:-null}" \
+          "$merge_expr" "$config_file" > "${config_file}.tmp"; then
+          log "Warning: jq merge failed; using base config only"
+          rm -f "${config_file}.tmp"
+        else
+          mv "${config_file}.tmp" "$config_file"
+        fi
+      fi
+
+      log "Generated OpenCode config for provider=${opencode_provider}: ${config_file}"
+    else
+      log "Warning: OPENCODE_PROVIDER not set; generated base config only"
+    fi
+  fi
+
+  # Generate auth.json (API key) if missing. OpenCode reads credentials
+  # from this file, not from {env:} references in config provider options.
+  if [ ! -f "$auth_file" ]; then
+    local opencode_provider="${OPENCODE_PROVIDER:-}"
+    local api_key=""
+
+    case "$opencode_provider" in
+      zai) api_key="${ZAI_API_KEY:-}" ;;
+    esac
+
+    if [ -n "$api_key" ] && [ -n "$opencode_provider" ]; then
+      mkdir -p "$auth_dir"
+      chmod 700 "$auth_dir" 2>/dev/null || true
+      jq -n --arg provider "$opencode_provider" --arg key "$api_key" \
+        '{($provider): {"type": "api", "key": $key}}' > "$auth_file"
+      chmod 600 "$auth_file" 2>/dev/null || true
+      log "Generated OpenCode auth.json for provider=${opencode_provider}: ${auth_file}"
+    fi
+  fi
+}
+
 # Selective auth seeding: copy only credential files for a provider,
 # skipping conversation caches and session state. Use this instead of
 # seed_provider_home when JOB_ID isolation is active.
@@ -66,6 +148,20 @@ seed_provider_auth() {
       fi
     done
   fi
+
+  # OpenCode: config directory holds provider auth and permission settings
+  if [ -d "${source_home}/.config/opencode" ]; then
+    mkdir -p "${agent_home}/.config/opencode"
+    cp -R "${source_home}/.config/opencode"/. "${agent_home}/.config/opencode"/
+  fi
+  # OpenCode: auth credentials from ~/.local/share/opencode/
+  if [ -f "${source_home}/.local/share/opencode/auth.json" ]; then
+    mkdir -p "${agent_home}/.local/share/opencode"
+    cp "${source_home}/.local/share/opencode/auth.json" "${agent_home}/.local/share/opencode/auth.json"
+  fi
+
+  # OpenCode: auto-generate config and auth.json if missing
+  generate_opencode_config "$agent_home"
 }
 
 workspace_root="${WORKSPACE_ROOT:-/workspace}"
@@ -299,6 +395,13 @@ preflight_check() {
         failures=$((failures + 1))
       fi
       ;;
+    opencode)
+      if [ -z "${OPENCODE_PROVIDER:-}" ] \
+        && [ ! -f "/home/node/.local/share/opencode/auth.json" ]; then
+        echo "Pre-flight: OpenCode auth not configured. Set OPENCODE_PROVIDER + API key, or run: opencode auth login." >&2
+        failures=$((failures + 1))
+      fi
+      ;;
   esac
 
   # Validate ALL agent tokens against GitHub API
@@ -410,6 +513,13 @@ for index in "${!agent_ids[@]}"; do
     seed_provider_home "/home/node/.gemini" "$agent_home/.gemini"
     seed_provider_home "/home/node/.claude" "$agent_home/.claude"
     seed_provider_home "/home/node/.config/claude" "$agent_home/.config/claude"
+    seed_provider_home "/home/node/.config/opencode" "$agent_home/.config/opencode"
+    seed_provider_home "/home/node/.local/share/opencode" "$agent_home/.local/share/opencode"
+
+    # Generate OpenCode auth.json if missing (API key stored in auth.json,
+    # not in config provider options). Must run after seed_provider_home so
+    # the bind-mounted config is already in place.
+    generate_opencode_config "$agent_home"
 
     # Login shells (bash -lc) reset PATH from /etc/profile, losing the
     # Docker ENV that includes the npm global bin directory. Write a
