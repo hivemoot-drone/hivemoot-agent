@@ -31,79 +31,10 @@ seed_provider_home() {
   fi
 }
 
-# Auto-generate Kilo config if missing. Creates minimal valid config with
-# permission template and provider-specific auth settings based on KILO_PROVIDER.
-# Falls back to gateway mode if KILOCODE_TOKEN is set instead.
-# shellcheck disable=SC2317,SC2329  # invoked from seed_provider_auth
-generate_kilo_config() {
-  local target_home="$1"
-  local config_dir="${target_home}/.config/kilo"
-  local config_file="${config_dir}/config.json"
-
-  if [ -f "$config_file" ]; then
-    return 0
-  fi
-
-  if [ "${AGENT_PROVIDER:-}" != "kilo" ]; then
-    return 0
-  fi
-
-  mkdir -p "$config_dir"
-
-  if [ ! -f /opt/hivemoot-agent/scripts/kilo-config-template.json ]; then
-    log "Warning: Kilo config template not found; skipping config generation"
-    return 0
-  fi
-
-  cp /opt/hivemoot-agent/scripts/kilo-config-template.json "$config_file"
-
-  if [ -n "${KILOCODE_TOKEN:-}" ]; then
-    log "Generated Kilo config for gateway mode: ${config_file}"
-    return 0
-  fi
-
-  local kilo_provider="${KILO_PROVIDER:-}"
-  if [ -z "$kilo_provider" ]; then
-    log "Warning: KILO_PROVIDER not set; generated base config only"
-    return 0
-  fi
-
-  local model_default=""
-  local provider_config=""
-  case "$kilo_provider" in
-    anthropic)
-      model_default="${KILO_MODEL:-claude-sonnet-4-20250514}"
-      provider_config='{"anthropic": {"options": {"apiKey": "{env:ANTHROPIC_API_KEY}"}}}'
-      ;;
-    openai)
-      model_default="${KILO_MODEL:-gpt-4}"
-      provider_config='{"openai": {"options": {"apiKey": "{env:OPENAI_API_KEY}"}}}'
-      ;;
-    google)
-      model_default="${KILO_MODEL:-gemini-2.0-flash-exp}"
-      provider_config='{"google": {"options": {"apiKey": "{env:GOOGLE_API_KEY}"}}}'
-      ;;
-    openrouter)
-      model_default="${KILO_MODEL:-anthropic/claude-sonnet-4-20250514}"
-      provider_config='{"openrouter": {"options": {"apiKey": "{env:OPENROUTER_API_KEY}"}}}'
-      ;;
-    *)
-      log "Warning: Unknown KILO_PROVIDER=${kilo_provider}; generated base config only"
-      return 0
-      ;;
-  esac
-
-  if ! jq -s --arg model "$model_default" --argjson provider "$provider_config" \
-    '.[0] * {"model": $model, "provider": $provider}' \
-    "$config_file" > "${config_file}.tmp"; then
-    log "Warning: jq merge failed; using base config only"
-    rm -f "${config_file}.tmp"
-    return 0
-  fi
-
-  mv "${config_file}.tmp" "$config_file"
-  log "Generated Kilo config for provider=${kilo_provider} model=${model_default}: ${config_file}"
-}
+# shellcheck disable=SC1091  # resolved at runtime via BASH_SOURCE
+source "$(dirname "${BASH_SOURCE[0]}")/kilo-helpers.sh"
+# shellcheck disable=SC1091  # resolved at runtime via BASH_SOURCE
+source "$(dirname "${BASH_SOURCE[0]}")/opencode-helpers.sh"
 
 # Selective auth seeding: copy only credential files for a provider,
 # skipping conversation caches and session state. Use this instead of
@@ -151,6 +82,20 @@ seed_provider_auth() {
 
   # Kilo: auto-generate config if missing (prevents interactive prompts in --auto mode)
   generate_kilo_config "$agent_home"
+
+  # OpenCode: config directory holds provider auth and permission settings
+  if [ -d "${source_home}/.config/opencode" ]; then
+    mkdir -p "${agent_home}/.config/opencode"
+    cp -R "${source_home}/.config/opencode"/. "${agent_home}/.config/opencode"/
+  fi
+  # OpenCode: auth credentials from ~/.local/share/opencode/
+  if [ -f "${source_home}/.local/share/opencode/auth.json" ]; then
+    mkdir -p "${agent_home}/.local/share/opencode"
+    cp "${source_home}/.local/share/opencode/auth.json" "${agent_home}/.local/share/opencode/auth.json"
+  fi
+
+  # OpenCode: auto-generate config and auth.json if missing
+  generate_opencode_config "$agent_home"
 }
 
 # ── Configuration ──────────────────────────────────────────────────
@@ -382,6 +327,21 @@ preflight_check() {
         failures=$((failures + 1))
       fi
       ;;
+    opencode)
+      if [ -n "${OPENCODE_PROVIDER:-}" ]; then
+        case "${OPENCODE_PROVIDER}" in
+          zai)
+            if [ -z "${ZAI_API_KEY:-}" ]; then
+              echo "Pre-flight: ZAI_API_KEY missing for OPENCODE_PROVIDER=zai." >&2
+              failures=$((failures + 1))
+            fi
+            ;;
+        esac
+      elif [ ! -f "/home/node/.local/share/opencode/auth.json" ]; then
+        echo "Pre-flight: OpenCode auth not configured. Set OPENCODE_PROVIDER + API key, or run: opencode auth login." >&2
+        failures=$((failures + 1))
+      fi
+      ;;
   esac
 
   # Validate agent tokens against GitHub API
@@ -467,6 +427,16 @@ for index in "${!agent_ids[@]}"; do
   seed_provider_home "/home/node/.claude" "$agent_home/.claude"
   seed_provider_home "/home/node/.config/claude" "$agent_home/.config/claude"
   seed_provider_home "/home/node/.config/kilo" "$agent_home/.config/kilo"
+  seed_provider_home "/home/node/.config/opencode" "$agent_home/.config/opencode"
+  seed_provider_home "/home/node/.local/share/opencode" "$agent_home/.local/share/opencode"
+
+  # Generate Kilo config if missing (prevents interactive prompts in --auto mode)
+  generate_kilo_config "$agent_home"
+
+  # Generate OpenCode auth.json if missing (API key stored in auth.json,
+  # not in config provider options). Must run after seed_provider_home so
+  # the bind-mounted config is already in place.
+  generate_opencode_config "$agent_home"
 
   # Ensure agent subprocesses can find npm-installed binaries
   # shellcheck disable=SC2016
