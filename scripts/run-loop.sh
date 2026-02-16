@@ -31,8 +31,8 @@ seed_provider_home() {
   fi
 }
 
-# shellcheck source=opencode-helpers.sh
-source /opt/hivemoot-agent/scripts/opencode-helpers.sh
+# shellcheck disable=SC1091  # resolved at runtime via BASH_SOURCE
+source "$(dirname "${BASH_SOURCE[0]}")/opencode-helpers.sh"
 
 # Selective auth seeding: copy only credential files for a provider,
 # skipping conversation caches and session state. Use this instead of

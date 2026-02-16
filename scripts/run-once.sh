@@ -116,8 +116,8 @@ do
   load_secret_from_file "$secret_var"
 done
 
-# shellcheck source=opencode-helpers.sh
-source /opt/hivemoot-agent/scripts/opencode-helpers.sh
+# shellcheck disable=SC1091  # resolved at runtime via BASH_SOURCE
+source "$(dirname "${BASH_SOURCE[0]}")/opencode-helpers.sh"
 
 provider="${AGENT_PROVIDER:-claude}"
 auth_mode="${AGENT_AUTH_MODE:-auto}"
