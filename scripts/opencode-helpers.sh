@@ -59,6 +59,7 @@ generate_opencode_config() {
           rm -f "${config_file}.tmp"
         else
           mv "${config_file}.tmp" "$config_file"
+          chmod 600 "$config_file" 2>/dev/null || log "Warning: chmod 600 failed on ${config_file}"
         fi
       fi
 
