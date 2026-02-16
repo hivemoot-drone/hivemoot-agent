@@ -112,7 +112,7 @@ generate_kilo_config() {
 # Auto-generate OpenCode config and auth.json if missing. Config holds
 # permissions and model selection; auth.json holds the actual API key
 # (OpenCode reads credentials from auth.json, NOT from provider options).
-# shellcheck disable=SC2317,SC2329  # invoked from seed_provider_auth
+# Called from: agent home setup loop (primary) and seed_provider_auth.
 generate_opencode_config() {
   local target_home="$1"
   local config_dir="${target_home}/.config/opencode"
@@ -183,7 +183,8 @@ generate_opencode_config() {
     if [ -n "$api_key" ] && [ -n "$opencode_provider" ]; then
       mkdir -p "$auth_dir"
       chmod 700 "$auth_dir" 2>/dev/null || true
-      printf '{"zai":{"type":"api","key":"%s"}}\n' "$api_key" > "$auth_file"
+      jq -n --arg provider "$opencode_provider" --arg key "$api_key" \
+        '{($provider): {"type": "api", "key": $key}}' > "$auth_file"
       chmod 600 "$auth_file" 2>/dev/null || true
       log "Generated OpenCode auth.json for provider=${opencode_provider}: ${auth_file}"
     fi

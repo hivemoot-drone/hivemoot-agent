@@ -263,7 +263,8 @@ generate_opencode_config() {
     if [ -n "$api_key" ] && [ -n "$opencode_provider" ]; then
       mkdir -p "$auth_dir"
       chmod 700 "$auth_dir" 2>/dev/null || true
-      printf '{"zai":{"type":"api","key":"%s"}}\n' "$api_key" > "$auth_file"
+      jq -n --arg provider "$opencode_provider" --arg key "$api_key" \
+        '{($provider): {"type": "api", "key": $key}}' > "$auth_file"
       chmod 600 "$auth_file" 2>/dev/null || true
       log "Generated OpenCode auth.json for provider=${opencode_provider}: ${auth_file}"
     fi
