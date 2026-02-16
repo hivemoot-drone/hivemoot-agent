@@ -34,6 +34,7 @@ seed_provider_home() {
 # Auto-generate Kilo config if missing. Creates minimal valid config with
 # permission template and provider-specific auth settings based on KILO_PROVIDER.
 # Falls back to gateway mode if KILOCODE_TOKEN is set instead.
+# shellcheck disable=SC2317,SC2329  # invoked from seed_provider_auth
 generate_kilo_config() {
   local target_home="$1"
   local config_dir="${target_home}/.config/kilo"

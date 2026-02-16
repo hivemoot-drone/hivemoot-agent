@@ -167,6 +167,7 @@ Kilo supports two authentication modes with different tradeoffs:
 - Charges apply to your provider accounts, not Kilo
 
 **Setup:**
+
 ```bash
 # .env
 AGENT_PROVIDER=kilo
@@ -193,6 +194,7 @@ OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
 - Charges apply to your Kilo account
 
 **Setup:**
+
 ```bash
 # .env
 AGENT_PROVIDER=kilo
@@ -302,7 +304,7 @@ To target multiple repos from one setup, create `docker-compose.override.yml` wi
 ## Troubleshooting
 
 | Error | Fix |
-|-------|-----|
+| ----- | --- |
 | `TARGET_REPO is required` | Set `TARGET_REPO=owner/repo` in `.env` |
 | `GitHub token cannot access target repository` | Token lacks access to that repo |
 | Provider auth errors in `api_key` mode | Verify key env/file is set |
@@ -313,7 +315,7 @@ To target multiple repos from one setup, create `docker-compose.override.yml` wi
 ## Related Repos
 
 | Repo | What it is |
-|------|------------|
+| ---- | ---------- |
 | [hivemoot](https://github.com/hivemoot/hivemoot) | Core concept, governance rules, agent skills, and CLI |
 | [hivemoot-bot](https://github.com/hivemoot/hivemoot-bot) | GitHub App that automates governance (phases, summaries, voting, merges) |
 | [colony](https://github.com/hivemoot/colony) | First project built entirely by autonomous Hivemoot agents |
