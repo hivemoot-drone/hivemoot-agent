@@ -105,12 +105,95 @@ load_secret_from_file() {
   export "$var_name"
 }
 
+# Auto-generate Kilo config if missing. Creates minimal valid config with
+# permission template and provider-specific auth settings based on KILO_PROVIDER.
+# Falls back to gateway mode if KILOCODE_TOKEN is set instead.
+generate_kilo_config() {
+  local target_home="$1"
+  local config_dir="${target_home}/.config/kilo"
+  local config_file="${config_dir}/config.json"
+
+  # Skip if config already exists (respect user customization)
+  if [ -f "$config_file" ]; then
+    return 0
+  fi
+
+  # Skip if Kilo provider not in use
+  if [ "${AGENT_PROVIDER:-}" != "kilo" ]; then
+    return 0
+  fi
+
+  mkdir -p "$config_dir"
+
+  # Start with base permission template
+  if [ ! -f /opt/hivemoot-agent/scripts/kilo-config-template.json ]; then
+    log "Warning: Kilo config template not found; skipping config generation"
+    return 0
+  fi
+
+  cp /opt/hivemoot-agent/scripts/kilo-config-template.json "$config_file"
+
+  # Gateway mode: no provider config needed (KILOCODE_TOKEN auth)
+  if [ -n "${KILOCODE_TOKEN:-}" ]; then
+    log "Generated Kilo config for gateway mode: ${config_file}"
+    return 0
+  fi
+
+  # BYOK mode: add provider-specific config
+  local kilo_provider="${KILO_PROVIDER:-}"
+  if [ -z "$kilo_provider" ]; then
+    log "Warning: KILO_PROVIDER not set; generated base config only"
+    return 0
+  fi
+
+  # Determine model and provider config based on KILO_PROVIDER
+  local model_default=""
+  local provider_config=""
+  case "$kilo_provider" in
+    anthropic)
+      model_default="${KILO_MODEL:-claude-sonnet-4-20250514}"
+      provider_config='{"anthropic": {"options": {"apiKey": "{env:ANTHROPIC_API_KEY}"}}}'
+      ;;
+    openai)
+      model_default="${KILO_MODEL:-gpt-4}"
+      provider_config='{"openai": {"options": {"apiKey": "{env:OPENAI_API_KEY}"}}}'
+      ;;
+    google)
+      model_default="${KILO_MODEL:-gemini-2.0-flash-exp}"
+      provider_config='{"google": {"options": {"apiKey": "{env:GOOGLE_API_KEY}"}}}'
+      ;;
+    openrouter)
+      model_default="${KILO_MODEL:-anthropic/claude-sonnet-4-20250514}"
+      provider_config='{"openrouter": {"options": {"apiKey": "{env:OPENROUTER_API_KEY}"}}}'
+      ;;
+    *)
+      # Unknown provider — generate base config and let Kilo handle errors
+      log "Warning: Unknown KILO_PROVIDER=${kilo_provider}; generated base config only"
+      return 0
+      ;;
+  esac
+
+  # Merge provider config into template using jq
+  if ! jq -s --arg model "$model_default" --argjson provider "$provider_config" \
+    '.[0] * {"model": $model, "provider": $provider}' \
+    "$config_file" > "${config_file}.tmp"; then
+    log "Warning: jq merge failed; using base config only"
+    rm -f "${config_file}.tmp"
+    return 0
+  fi
+
+  mv "${config_file}.tmp" "$config_file"
+  log "Generated Kilo config for provider=${kilo_provider} model=${model_default}: ${config_file}"
+}
+
 for secret_var in \
   AGENT_GITHUB_TOKEN \
   OPENAI_API_KEY \
   GOOGLE_API_KEY \
   GEMINI_API_KEY \
-  ANTHROPIC_API_KEY
+  ANTHROPIC_API_KEY \
+  OPENROUTER_API_KEY \
+  KILOCODE_TOKEN
 do
   load_secret_from_file "$secret_var"
 done
@@ -259,6 +342,15 @@ if [ -n "$job_home" ]; then
       fi
     done
   fi
+
+  # Kilo: seed config (provider auth, permissions) from ~/.config/kilo/
+  if [ -d "${HOME}/.config/kilo" ]; then
+    mkdir -p "$job_home/.config/kilo"
+    cp -R "${HOME}/.config/kilo"/. "$job_home/.config/kilo"/
+  fi
+
+  # Kilo: auto-generate config if missing (prevents interactive prompts in --auto mode)
+  generate_kilo_config "$job_home"
 
   # Carry forward .profile so agent subprocesses find npm binaries
   if [ -f "${HOME}/.profile" ]; then
@@ -488,8 +580,63 @@ case "$provider" in
     run_in_repo=1
     ;;
 
+  kilo)
+    if ! command -v kilo >/dev/null 2>&1; then
+      echo "kilo CLI is not installed in the container." >&2
+      exit 1
+    fi
+    kilo_provider="${KILO_PROVIDER:-}"
+    kilocode_token="${KILOCODE_TOKEN:-}"
+
+    # Validate auth: KILOCODE_TOKEN (gateway) or KILO_PROVIDER + matching API key (BYOK).
+    if [ -z "$kilocode_token" ]; then
+      if [ -z "$kilo_provider" ]; then
+        echo "KILO_PROVIDER is required when AGENT_PROVIDER=kilo (unless KILOCODE_TOKEN is set for gateway mode)." >&2
+        exit 1
+      fi
+      case "$kilo_provider" in
+        anthropic)
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "ANTHROPIC_API_KEY is required when KILO_PROVIDER=anthropic." >&2
+            exit 1
+          fi
+          ;;
+        openai)
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "OPENAI_API_KEY is required when KILO_PROVIDER=openai." >&2
+            exit 1
+          fi
+          ;;
+        google)
+          if [ -z "${GOOGLE_API_KEY:-}" ] && [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "GOOGLE_API_KEY (or GEMINI_API_KEY) is required when KILO_PROVIDER=google." >&2
+            exit 1
+          fi
+          ;;
+        openrouter)
+          if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+            echo "OPENROUTER_API_KEY is required when KILO_PROVIDER=openrouter." >&2
+            exit 1
+          fi
+          ;;
+      esac
+      log "Kilo BYOK mode: provider=${kilo_provider}"
+    else
+      log "Kilo gateway mode (KILOCODE_TOKEN set)"
+    fi
+
+    cmd=(kilo run --auto)
+    kilo_model="${KILO_MODEL:-}"
+    if [ -n "$kilo_model" ]; then
+      cmd+=(-m "$kilo_model")
+      log "Kilo model override: ${kilo_model}"
+    fi
+    cmd+=("$prompt")
+    run_in_repo=1
+    ;;
+
   *)
-    echo "Unsupported AGENT_PROVIDER: ${provider}. Use codex|gemini|claude." >&2
+    echo "Unsupported AGENT_PROVIDER: ${provider}. Use codex|gemini|claude|kilo." >&2
     exit 1
     ;;
 esac
