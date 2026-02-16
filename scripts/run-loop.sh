@@ -109,60 +109,85 @@ generate_kilo_config() {
   log "Generated Kilo config for provider=${kilo_provider} model=${model_default}: ${config_file}"
 }
 
-# Auto-generate OpenCode config if missing. Creates minimal valid config with
-# permission template and provider-specific auth settings based on OPENCODE_PROVIDER.
+# Auto-generate OpenCode config and auth.json if missing. Config holds
+# permissions and model selection; auth.json holds the actual API key
+# (OpenCode reads credentials from auth.json, NOT from provider options).
 # shellcheck disable=SC2317,SC2329  # invoked from seed_provider_auth
 generate_opencode_config() {
   local target_home="$1"
   local config_dir="${target_home}/.config/opencode"
   local config_file="${config_dir}/opencode.json"
-
-  if [ -f "$config_file" ]; then
-    return 0
-  fi
+  local auth_dir="${target_home}/.local/share/opencode"
+  local auth_file="${auth_dir}/auth.json"
 
   if [ "${AGENT_PROVIDER:-}" != "opencode" ]; then
     return 0
   fi
 
-  mkdir -p "$config_dir"
+  # Generate config (permissions + model) if missing
+  if [ ! -f "$config_file" ]; then
+    mkdir -p "$config_dir"
 
-  if [ ! -f /opt/hivemoot-agent/scripts/opencode-config-template.json ]; then
-    log "Warning: OpenCode config template not found; skipping config generation"
-    return 0
-  fi
-
-  cp /opt/hivemoot-agent/scripts/opencode-config-template.json "$config_file"
-
-  local opencode_provider="${OPENCODE_PROVIDER:-}"
-  if [ -z "$opencode_provider" ]; then
-    log "Warning: OPENCODE_PROVIDER not set; generated base config only"
-    return 0
-  fi
-
-  local model_default=""
-  local provider_config=""
-  case "$opencode_provider" in
-    zai)
-      model_default="${OPENCODE_MODEL:-zai/glm-5}"
-      provider_config='{"zai": {"options": {"zaiApiKey": "{env:ZAI_API_KEY}", "zaiApiLine": "international_coding"}}}'
-      ;;
-    *)
-      log "Warning: Unknown OPENCODE_PROVIDER=${opencode_provider}; generated base config only"
+    if [ ! -f /opt/hivemoot-agent/scripts/opencode-config-template.json ]; then
+      log "Warning: OpenCode config template not found; skipping config generation"
       return 0
-      ;;
-  esac
+    fi
 
-  if ! jq -s --arg model "$model_default" --argjson provider "$provider_config" \
-    '.[0] * {"model": $model, "provider": $provider}' \
-    "$config_file" > "${config_file}.tmp"; then
-    log "Warning: jq merge failed; using base config only"
-    rm -f "${config_file}.tmp"
-    return 0
+    cp /opt/hivemoot-agent/scripts/opencode-config-template.json "$config_file"
+
+    local opencode_provider="${OPENCODE_PROVIDER:-}"
+    if [ -n "$opencode_provider" ]; then
+      local model_default=""
+      local provider_config=""
+      case "$opencode_provider" in
+        zai)
+          model_default="${OPENCODE_MODEL:-zai/glm-5}"
+          provider_config='{"zai":{"name":"Z.AI","npm":"@ai-sdk/openai-compatible","options":{"baseURL":"https://api.z.ai/api/coding/paas/v4"},"models":{"glm-5":{"id":"glm-5","name":"GLM-5"}}}}'
+          ;;
+        *)
+          model_default="${OPENCODE_MODEL:-}"
+          ;;
+      esac
+
+      local merge_expr='. + {"model": $model}'
+      if [ -n "$provider_config" ]; then
+        merge_expr='. + {"model": $model, "provider": $provider}'
+      fi
+
+      if [ -n "$model_default" ]; then
+        if ! jq --arg model "$model_default" --argjson provider "${provider_config:-null}" \
+          "$merge_expr" "$config_file" > "${config_file}.tmp"; then
+          log "Warning: jq merge failed; using base config only"
+          rm -f "${config_file}.tmp"
+        else
+          mv "${config_file}.tmp" "$config_file"
+        fi
+      fi
+
+      log "Generated OpenCode config for provider=${opencode_provider}: ${config_file}"
+    else
+      log "Warning: OPENCODE_PROVIDER not set; generated base config only"
+    fi
   fi
 
-  mv "${config_file}.tmp" "$config_file"
-  log "Generated OpenCode config for provider=${opencode_provider} model=${model_default}: ${config_file}"
+  # Generate auth.json (API key) if missing. OpenCode reads credentials
+  # from this file, not from {env:} references in config provider options.
+  if [ ! -f "$auth_file" ]; then
+    local opencode_provider="${OPENCODE_PROVIDER:-}"
+    local api_key=""
+
+    case "$opencode_provider" in
+      zai) api_key="${ZAI_API_KEY:-}" ;;
+    esac
+
+    if [ -n "$api_key" ] && [ -n "$opencode_provider" ]; then
+      mkdir -p "$auth_dir"
+      chmod 700 "$auth_dir" 2>/dev/null || true
+      printf '{"zai":{"type":"api","key":"%s"}}\n' "$api_key" > "$auth_file"
+      chmod 600 "$auth_file" 2>/dev/null || true
+      log "Generated OpenCode auth.json for provider=${opencode_provider}: ${auth_file}"
+    fi
+  fi
 }
 
 # Selective auth seeding: copy only credential files for a provider,
@@ -558,6 +583,11 @@ for index in "${!agent_ids[@]}"; do
   seed_provider_home "/home/node/.local/share/kilo" "$agent_home/.local/share/kilo"
   seed_provider_home "/home/node/.config/opencode" "$agent_home/.config/opencode"
   seed_provider_home "/home/node/.local/share/opencode" "$agent_home/.local/share/opencode"
+
+  # Generate OpenCode auth.json if missing (API key stored in auth.json,
+  # not in config provider options). Must run after seed_provider_home so
+  # the bind-mounted config is already in place.
+  generate_opencode_config "$agent_home"
 
   # Ensure agent subprocesses can find npm-installed binaries
   # shellcheck disable=SC2016
