@@ -119,8 +119,6 @@ do
 done
 
 # shellcheck disable=SC1091  # resolved at runtime via BASH_SOURCE
-source "$(dirname "${BASH_SOURCE[0]}")/kilo-helpers.sh"
-# shellcheck disable=SC1091  # resolved at runtime via BASH_SOURCE
 source "$(dirname "${BASH_SOURCE[0]}")/opencode-helpers.sh"
 
 provider="${AGENT_PROVIDER:-claude}"
@@ -273,9 +271,6 @@ if [ -n "$job_home" ]; then
     mkdir -p "$job_home/.config/kilo"
     cp -R "${HOME}/.config/kilo"/. "$job_home/.config/kilo"/
   fi
-
-  # Kilo: auto-generate config if missing (prevents interactive prompts in --auto mode)
-  generate_kilo_config "$job_home"
 
   # OpenCode: seed config from ~/.config/opencode/
   if [ -d "${HOME}/.config/opencode" ]; then

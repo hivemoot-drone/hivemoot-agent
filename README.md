@@ -310,7 +310,7 @@ To target multiple repos from one setup, create `docker-compose.override.yml` wi
 | Provider auth errors in `api_key` mode | Verify key env/file is set |
 | Subscription auth errors | Run the matching `auth-*` command first |
 | `KILO_PROVIDER is required` | Set `KILO_PROVIDER` (e.g. `openrouter`) or `KILOCODE_TOKEN` |
-| Kilo permission prompts in `--auto` mode | Config template missing; remove `~/.config/kilo/` and restart to regenerate |
+| Kilo permission prompts in `--auto` mode | The `--auto` flag should bypass all prompts; check Kilo CLI version (`kilo --version`) |
 
 ## Related Repos
 

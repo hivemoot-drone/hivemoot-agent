@@ -32,8 +32,6 @@ seed_provider_home() {
 }
 
 # shellcheck disable=SC1091  # resolved at runtime via BASH_SOURCE
-source "$(dirname "${BASH_SOURCE[0]}")/kilo-helpers.sh"
-# shellcheck disable=SC1091  # resolved at runtime via BASH_SOURCE
 source "$(dirname "${BASH_SOURCE[0]}")/opencode-helpers.sh"
 
 # Selective auth seeding: copy only credential files for a provider,
@@ -79,9 +77,6 @@ seed_provider_auth() {
     mkdir -p "${agent_home}/.config/kilo"
     cp -R "${source_home}/.config/kilo"/. "${agent_home}/.config/kilo"/
   fi
-
-  # Kilo: auto-generate config if missing (prevents interactive prompts in --auto mode)
-  generate_kilo_config "$agent_home"
 
   # OpenCode: config directory holds provider auth and permission settings
   if [ -d "${source_home}/.config/opencode" ]; then
@@ -429,9 +424,6 @@ for index in "${!agent_ids[@]}"; do
   seed_provider_home "/home/node/.config/kilo" "$agent_home/.config/kilo"
   seed_provider_home "/home/node/.config/opencode" "$agent_home/.config/opencode"
   seed_provider_home "/home/node/.local/share/opencode" "$agent_home/.local/share/opencode"
-
-  # Generate Kilo config if missing (prevents interactive prompts in --auto mode)
-  generate_kilo_config "$agent_home"
 
   # Generate OpenCode auth.json if missing (API key stored in auth.json,
   # not in config provider options). Must run after seed_provider_home so
