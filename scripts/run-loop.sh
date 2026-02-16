@@ -88,7 +88,7 @@ generate_kilo_config() {
       provider_config='{"openrouter": {"options": {"apiKey": "{env:OPENROUTER_API_KEY}"}}}'
       ;;
     zai)
-      model_default="${KILO_MODEL:-glm-4.7}"
+      model_default="${KILO_MODEL:-zai/glm-5}"
       provider_config='{"zai": {"options": {"zaiApiKey": "{env:ZAI_API_KEY}", "zaiApiLine": "international_coding"}}}'
       ;;
     *)
@@ -107,6 +107,62 @@ generate_kilo_config() {
 
   mv "${config_file}.tmp" "$config_file"
   log "Generated Kilo config for provider=${kilo_provider} model=${model_default}: ${config_file}"
+}
+
+# Auto-generate OpenCode config if missing. Creates minimal valid config with
+# permission template and provider-specific auth settings based on OPENCODE_PROVIDER.
+# shellcheck disable=SC2317,SC2329  # invoked from seed_provider_auth
+generate_opencode_config() {
+  local target_home="$1"
+  local config_dir="${target_home}/.config/opencode"
+  local config_file="${config_dir}/opencode.json"
+
+  if [ -f "$config_file" ]; then
+    return 0
+  fi
+
+  if [ "${AGENT_PROVIDER:-}" != "opencode" ]; then
+    return 0
+  fi
+
+  mkdir -p "$config_dir"
+
+  if [ ! -f /opt/hivemoot-agent/scripts/opencode-config-template.json ]; then
+    log "Warning: OpenCode config template not found; skipping config generation"
+    return 0
+  fi
+
+  cp /opt/hivemoot-agent/scripts/opencode-config-template.json "$config_file"
+
+  local opencode_provider="${OPENCODE_PROVIDER:-}"
+  if [ -z "$opencode_provider" ]; then
+    log "Warning: OPENCODE_PROVIDER not set; generated base config only"
+    return 0
+  fi
+
+  local model_default=""
+  local provider_config=""
+  case "$opencode_provider" in
+    zai)
+      model_default="${OPENCODE_MODEL:-zai/glm-5}"
+      provider_config='{"zai": {"options": {"zaiApiKey": "{env:ZAI_API_KEY}", "zaiApiLine": "international_coding"}}}'
+      ;;
+    *)
+      log "Warning: Unknown OPENCODE_PROVIDER=${opencode_provider}; generated base config only"
+      return 0
+      ;;
+  esac
+
+  if ! jq -s --arg model "$model_default" --argjson provider "$provider_config" \
+    '.[0] * {"model": $model, "provider": $provider}' \
+    "$config_file" > "${config_file}.tmp"; then
+    log "Warning: jq merge failed; using base config only"
+    rm -f "${config_file}.tmp"
+    return 0
+  fi
+
+  mv "${config_file}.tmp" "$config_file"
+  log "Generated OpenCode config for provider=${opencode_provider} model=${model_default}: ${config_file}"
 }
 
 # Selective auth seeding: copy only credential files for a provider,
@@ -161,6 +217,20 @@ seed_provider_auth() {
 
   # Kilo: auto-generate config if missing (prevents interactive prompts in --auto mode)
   generate_kilo_config "$agent_home"
+
+  # OpenCode: config directory holds provider auth and permission settings
+  if [ -d "${source_home}/.config/opencode" ]; then
+    mkdir -p "${agent_home}/.config/opencode"
+    cp -R "${source_home}/.config/opencode"/. "${agent_home}/.config/opencode"/
+  fi
+  # OpenCode: auth credentials from ~/.local/share/opencode/
+  if [ -f "${source_home}/.local/share/opencode/auth.json" ]; then
+    mkdir -p "${agent_home}/.local/share/opencode"
+    cp "${source_home}/.local/share/opencode/auth.json" "${agent_home}/.local/share/opencode/auth.json"
+  fi
+
+  # OpenCode: auto-generate config if missing
+  generate_opencode_config "$agent_home"
 }
 
 # ── Configuration ──────────────────────────────────────────────────
@@ -393,6 +463,13 @@ preflight_check() {
         failures=$((failures + 1))
       fi
       ;;
+    opencode)
+      if [ -z "${OPENCODE_PROVIDER:-}" ] \
+        && [ ! -f "/home/node/.local/share/opencode/auth.json" ]; then
+        echo "Pre-flight: OpenCode auth not configured. Set OPENCODE_PROVIDER + API key, or run: opencode auth login." >&2
+        failures=$((failures + 1))
+      fi
+      ;;
   esac
 
   # Validate agent tokens against GitHub API
@@ -479,6 +556,8 @@ for index in "${!agent_ids[@]}"; do
   seed_provider_home "/home/node/.config/claude" "$agent_home/.config/claude"
   seed_provider_home "/home/node/.config/kilo" "$agent_home/.config/kilo"
   seed_provider_home "/home/node/.local/share/kilo" "$agent_home/.local/share/kilo"
+  seed_provider_home "/home/node/.config/opencode" "$agent_home/.config/opencode"
+  seed_provider_home "/home/node/.local/share/opencode" "$agent_home/.local/share/opencode"
 
   # Ensure agent subprocesses can find npm-installed binaries
   # shellcheck disable=SC2016

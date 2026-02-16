@@ -85,7 +85,7 @@ generate_kilo_config() {
       provider_config='{"openrouter": {"options": {"apiKey": "{env:OPENROUTER_API_KEY}"}}}'
       ;;
     zai)
-      model_default="${KILO_MODEL:-glm-4.7}"
+      model_default="${KILO_MODEL:-zai/glm-5}"
       provider_config='{"zai": {"options": {"zaiApiKey": "{env:ZAI_API_KEY}", "zaiApiLine": "international_coding"}}}'
       ;;
     *)

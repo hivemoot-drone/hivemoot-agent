@@ -32,6 +32,7 @@ for secret_var in \
   GEMINI_API_KEY \
   ANTHROPIC_API_KEY \
   OPENROUTER_API_KEY \
+  ZAI_API_KEY \
   KILOCODE_TOKEN
 do
   load_secret_from_file "$secret_var"

@@ -6,6 +6,7 @@ x-agent-base: &agent-base
       CODEX_VERSION: ${CODEX_VERSION:-latest}
       GEMINI_VERSION: ${GEMINI_VERSION:-latest}
       KILO_VERSION: ${KILO_VERSION:-latest}
+      OPENCODE_VERSION: ${OPENCODE_VERSION:-latest}
       CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
       HIVEMOOT_CLI_VERSION: ${HIVEMOOT_CLI_VERSION:-latest}
   image: hivemoot-agent:local
@@ -26,6 +27,8 @@ x-agent-base: &agent-base
     - claude-config:/home/node/.config/claude
     - kilo-config:/home/node/.config/kilo
     - kilo-data:/home/node/.local/share/kilo
+    - opencode-config:/home/node/.config/opencode
+    - opencode-data:/home/node/.local/share/opencode
   stdin_open: true
   tty: true
 
@@ -79,6 +82,8 @@ x-agent-env: &agent-env
   KILO_PROVIDER: ${KILO_PROVIDER:-}
   KILO_MODEL: ${KILO_MODEL:-}
   KILOCODE_TOKEN_FILE: ${KILOCODE_TOKEN_FILE:-}
+  OPENCODE_PROVIDER: ${OPENCODE_PROVIDER:-}
+  OPENCODE_MODEL: ${OPENCODE_MODEL:-}
   MAX_CONSECUTIVE_FAILURES: ${MAX_CONSECUTIVE_FAILURES:-5}
   HIVEMOOT_CLI_VERSION: ${HIVEMOOT_CLI_VERSION:-latest}
   HIVEMOOT_CLI_UPDATE: ${HIVEMOOT_CLI_UPDATE:-auto}
@@ -121,3 +126,5 @@ volumes:
   claude-config:
   kilo-config:
   kilo-data:
+  opencode-config:
+  opencode-data:

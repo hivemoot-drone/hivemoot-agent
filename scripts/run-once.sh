@@ -167,7 +167,7 @@ generate_kilo_config() {
       provider_config='{"openrouter": {"options": {"apiKey": "{env:OPENROUTER_API_KEY}"}}}'
       ;;
     zai)
-      model_default="${KILO_MODEL:-glm-4.7}"
+      model_default="${KILO_MODEL:-zai/glm-5}"
       provider_config='{"zai": {"options": {"zaiApiKey": "{env:ZAI_API_KEY}", "zaiApiLine": "international_coding"}}}'
       ;;
     *)
@@ -188,6 +188,61 @@ generate_kilo_config() {
 
   mv "${config_file}.tmp" "$config_file"
   log "Generated Kilo config for provider=${kilo_provider} model=${model_default}: ${config_file}"
+}
+
+# Auto-generate OpenCode config if missing. Creates minimal valid config with
+# permission template and provider-specific auth settings based on OPENCODE_PROVIDER.
+generate_opencode_config() {
+  local target_home="$1"
+  local config_dir="${target_home}/.config/opencode"
+  local config_file="${config_dir}/opencode.json"
+
+  if [ -f "$config_file" ]; then
+    return 0
+  fi
+
+  if [ "${AGENT_PROVIDER:-}" != "opencode" ]; then
+    return 0
+  fi
+
+  mkdir -p "$config_dir"
+
+  if [ ! -f /opt/hivemoot-agent/scripts/opencode-config-template.json ]; then
+    log "Warning: OpenCode config template not found; skipping config generation"
+    return 0
+  fi
+
+  cp /opt/hivemoot-agent/scripts/opencode-config-template.json "$config_file"
+
+  local opencode_provider="${OPENCODE_PROVIDER:-}"
+  if [ -z "$opencode_provider" ]; then
+    log "Warning: OPENCODE_PROVIDER not set; generated base config only"
+    return 0
+  fi
+
+  local model_default=""
+  local provider_config=""
+  case "$opencode_provider" in
+    zai)
+      model_default="${OPENCODE_MODEL:-zai/glm-5}"
+      provider_config='{"zai": {"options": {"zaiApiKey": "{env:ZAI_API_KEY}", "zaiApiLine": "international_coding"}}}'
+      ;;
+    *)
+      log "Warning: Unknown OPENCODE_PROVIDER=${opencode_provider}; generated base config only"
+      return 0
+      ;;
+  esac
+
+  if ! jq -s --arg model "$model_default" --argjson provider "$provider_config" \
+    '.[0] * {"model": $model, "provider": $provider}' \
+    "$config_file" > "${config_file}.tmp"; then
+    log "Warning: jq merge failed; using base config only"
+    rm -f "${config_file}.tmp"
+    return 0
+  fi
+
+  mv "${config_file}.tmp" "$config_file"
+  log "Generated OpenCode config for provider=${opencode_provider} model=${model_default}: ${config_file}"
 }
 
 for secret_var in \
@@ -362,6 +417,19 @@ if [ -n "$job_home" ]; then
 
   # Kilo: auto-generate config if missing (prevents interactive prompts in --auto mode)
   generate_kilo_config "$job_home"
+
+  # OpenCode: seed config from ~/.config/opencode/
+  if [ -d "${HOME}/.config/opencode" ]; then
+    mkdir -p "$job_home/.config/opencode"
+    cp -R "${HOME}/.config/opencode"/. "$job_home/.config/opencode"/
+  fi
+  if [ -f "${HOME}/.local/share/opencode/auth.json" ]; then
+    mkdir -p "$job_home/.local/share/opencode"
+    cp "${HOME}/.local/share/opencode/auth.json" "$job_home/.local/share/opencode/auth.json"
+  fi
+
+  # OpenCode: auto-generate config if missing
+  generate_opencode_config "$job_home"
 
   # Carry forward .profile so agent subprocesses find npm binaries
   if [ -f "${HOME}/.profile" ]; then
@@ -656,8 +724,43 @@ case "$provider" in
     run_in_repo=1
     ;;
 
+  opencode)
+    if ! command -v opencode >/dev/null 2>&1; then
+      echo "opencode CLI is not installed in the container." >&2
+      exit 1
+    fi
+    opencode_provider="${OPENCODE_PROVIDER:-}"
+
+    # Validate auth: BYOK with provider API key or interactive auth
+    if [ -n "$opencode_provider" ]; then
+      case "$opencode_provider" in
+        zai)
+          if [ -z "${ZAI_API_KEY:-}" ]; then
+            echo "ZAI_API_KEY is required when OPENCODE_PROVIDER=zai." >&2
+            exit 1
+          fi
+          ;;
+      esac
+      log "OpenCode BYOK mode: provider=${opencode_provider}"
+    elif [ -f "${HOME}/.local/share/opencode/auth.json" ]; then
+      log "OpenCode interactive auth mode (cached auth.json)"
+    else
+      echo "OpenCode auth not configured. Set OPENCODE_PROVIDER + API key, or run: opencode auth login." >&2
+      exit 1
+    fi
+
+    cmd=(opencode run)
+    opencode_model="${OPENCODE_MODEL:-}"
+    if [ -n "$opencode_model" ]; then
+      cmd+=(--model "$opencode_model")
+      log "OpenCode model: ${opencode_model}"
+    fi
+    cmd+=("$prompt")
+    run_in_repo=1
+    ;;
+
   *)
-    echo "Unsupported AGENT_PROVIDER: ${provider}. Use codex|gemini|claude|kilo." >&2
+    echo "Unsupported AGENT_PROVIDER: ${provider}. Use codex|gemini|claude|kilo|opencode." >&2
     exit 1
     ;;
 esac
