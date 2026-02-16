@@ -70,9 +70,9 @@ seed_provider_auth() {
   fi
 
   # Kilo: config directory holds provider auth and permission settings
-  if [ -d "${source_home}/.config/kilocode" ]; then
-    mkdir -p "${agent_home}/.config/kilocode"
-    cp -R "${source_home}/.config/kilocode"/. "${agent_home}/.config/kilocode"/
+  if [ -d "${source_home}/.config/kilo" ]; then
+    mkdir -p "${agent_home}/.config/kilo"
+    cp -R "${source_home}/.config/kilo"/. "${agent_home}/.config/kilo"/
   fi
 }
 
@@ -389,7 +389,7 @@ for index in "${!agent_ids[@]}"; do
   seed_provider_home "/home/node/.gemini" "$agent_home/.gemini"
   seed_provider_home "/home/node/.claude" "$agent_home/.claude"
   seed_provider_home "/home/node/.config/claude" "$agent_home/.config/claude"
-  seed_provider_home "/home/node/.config/kilocode" "$agent_home/.config/kilocode"
+  seed_provider_home "/home/node/.config/kilo" "$agent_home/.config/kilo"
 
   # Ensure agent subprocesses can find npm-installed binaries
   # shellcheck disable=SC2016

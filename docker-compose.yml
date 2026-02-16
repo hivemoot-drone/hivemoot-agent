@@ -24,7 +24,7 @@ x-agent-base: &agent-base
     - gemini-home:/home/node/.gemini
     - claude-home:/home/node/.claude
     - claude-config:/home/node/.config/claude
-    - kilo-config:/home/node/.config/kilocode
+    - kilo-config:/home/node/.config/kilo
   stdin_open: true
   tty: true
 

@@ -52,7 +52,7 @@ RUN npm install -g \
 WORKDIR /tmp/claude-install
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}" \
   && rm -rf /tmp/claude-install \
-  && mkdir -p /home/node/.codex /home/node/.gemini /home/node/.claude /home/node/.config/claude /home/node/.config/kilocode
+  && mkdir -p /home/node/.codex /home/node/.gemini /home/node/.claude /home/node/.config/claude /home/node/.config/kilo
 
 USER root
 

@@ -262,10 +262,10 @@ if [ -n "$job_home" ]; then
     done
   fi
 
-  # Kilo: seed config (provider auth, permissions) from ~/.config/kilocode/
-  if [ -d "${HOME}/.config/kilocode" ]; then
-    mkdir -p "$job_home/.config/kilocode"
-    cp -R "${HOME}/.config/kilocode"/. "$job_home/.config/kilocode"/
+  # Kilo: seed config (provider auth, permissions) from ~/.config/kilo/
+  if [ -d "${HOME}/.config/kilo" ]; then
+    mkdir -p "$job_home/.config/kilo"
+    cp -R "${HOME}/.config/kilo"/. "$job_home/.config/kilo"/
   fi
 
   # Carry forward .profile so agent subprocesses find npm binaries
@@ -542,6 +542,11 @@ case "$provider" in
     fi
 
     cmd=(kilo run --auto)
+    kilo_model="${KILO_MODEL:-}"
+    if [ -n "$kilo_model" ]; then
+      cmd+=(-m "$kilo_model")
+      log "Kilo model override: ${kilo_model}"
+    fi
     cmd+=("$prompt")
     run_in_repo=1
     ;;
