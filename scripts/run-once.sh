@@ -155,6 +155,7 @@ generate_opencode_config() {
           ;;
       esac
 
+      # shellcheck disable=SC2016 -- $model and $provider are jq variables, not shell
       local merge_expr='. + {"model": $model}'
       if [ -n "$provider_config" ]; then
         merge_expr='. + {"model": $model, "provider": $provider}'
