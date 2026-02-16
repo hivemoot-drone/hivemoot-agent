@@ -19,6 +19,7 @@ generate_opencode_config() {
   # Generate config (permissions + model) if missing
   if [ ! -f "$config_file" ]; then
     mkdir -p "$config_dir"
+    chmod 700 "$config_dir" 2>/dev/null || log "Warning: chmod 700 failed on ${config_dir}"
 
     if [ ! -f /opt/hivemoot-agent/scripts/opencode-config-template.json ]; then
       log "Warning: OpenCode config template not found; skipping config generation"
@@ -26,6 +27,7 @@ generate_opencode_config() {
     fi
 
     cp /opt/hivemoot-agent/scripts/opencode-config-template.json "$config_file"
+    chmod 600 "$config_file" 2>/dev/null || log "Warning: chmod 600 failed on ${config_file}"
 
     local opencode_provider="${OPENCODE_PROVIDER:-}"
     if [ -n "$opencode_provider" ]; then
@@ -38,6 +40,7 @@ generate_opencode_config() {
           ;;
         *)
           model_default="${OPENCODE_MODEL:-}"
+          log "Warning: unknown OPENCODE_PROVIDER '${opencode_provider}'; no provider config will be generated"
           ;;
       esac
 
@@ -77,10 +80,10 @@ generate_opencode_config() {
 
     if [ -n "$api_key" ] && [ -n "$opencode_provider" ]; then
       mkdir -p "$auth_dir"
-      chmod 700 "$auth_dir" 2>/dev/null || true
+      chmod 700 "$auth_dir" 2>/dev/null || log "Warning: chmod 700 failed on ${auth_dir}"
       jq -n --arg provider "$opencode_provider" --arg key "$api_key" \
         '{($provider): {"type": "api", "key": $key}}' > "$auth_file"
-      chmod 600 "$auth_file" 2>/dev/null || true
+      chmod 600 "$auth_file" 2>/dev/null || log "Warning: chmod 600 failed on ${auth_file}"
       log "Generated OpenCode auth.json for provider=${opencode_provider}: ${auth_file}"
     fi
   fi
