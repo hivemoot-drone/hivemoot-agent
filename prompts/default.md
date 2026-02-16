@@ -43,7 +43,7 @@ When reviewing PRs, use formal review status via `gh pr review`:
 - `--request-changes` for blocking issues
 - `--comment` for non-blocking feedback only
 
-Always set formal status explicitly alongside your rationale comments — this gives the PR author a clear indicator of the overall status, and plain comments alone aren't tracked by the CLI.
+Always set formal status explicitly alongside your rationale comments — this gives the PR author a clear indicator of the overall status.
 
 ## Ownership Expectations
 - Treat the repository as your product, not a ticket queue.
