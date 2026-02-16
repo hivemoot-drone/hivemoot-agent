@@ -166,6 +166,10 @@ generate_kilo_config() {
       model_default="${KILO_MODEL:-anthropic/claude-sonnet-4-20250514}"
       provider_config='{"openrouter": {"options": {"apiKey": "{env:OPENROUTER_API_KEY}"}}}'
       ;;
+    zai)
+      model_default="${KILO_MODEL:-glm-4.7}"
+      provider_config='{"zai": {"options": {"zaiApiKey": "{env:ZAI_API_KEY}", "zaiApiLine": "international_coding"}}}'
+      ;;
     *)
       # Unknown provider — generate base config and let Kilo handle errors
       log "Warning: Unknown KILO_PROVIDER=${kilo_provider}; generated base config only"
@@ -193,6 +197,7 @@ for secret_var in \
   GEMINI_API_KEY \
   ANTHROPIC_API_KEY \
   OPENROUTER_API_KEY \
+  ZAI_API_KEY \
   KILOCODE_TOKEN
 do
   load_secret_from_file "$secret_var"
@@ -347,6 +352,12 @@ if [ -n "$job_home" ]; then
   if [ -d "${HOME}/.config/kilo" ]; then
     mkdir -p "$job_home/.config/kilo"
     cp -R "${HOME}/.config/kilo"/. "$job_home/.config/kilo"/
+  fi
+  # Kilo: seed device auth credentials from ~/.local/share/kilo/
+  # auth.json is stored here after `kilo auth login` (1-year token).
+  if [ -f "${HOME}/.local/share/kilo/auth.json" ]; then
+    mkdir -p "$job_home/.local/share/kilo"
+    cp "${HOME}/.local/share/kilo/auth.json" "$job_home/.local/share/kilo/auth.json"
   fi
 
   # Kilo: auto-generate config if missing (prevents interactive prompts in --auto mode)
@@ -588,12 +599,13 @@ case "$provider" in
     kilo_provider="${KILO_PROVIDER:-}"
     kilocode_token="${KILOCODE_TOKEN:-}"
 
-    # Validate auth: KILOCODE_TOKEN (gateway) or KILO_PROVIDER + matching API key (BYOK).
-    if [ -z "$kilocode_token" ]; then
-      if [ -z "$kilo_provider" ]; then
-        echo "KILO_PROVIDER is required when AGENT_PROVIDER=kilo (unless KILOCODE_TOKEN is set for gateway mode)." >&2
-        exit 1
-      fi
+    # Validate auth: three modes supported.
+    # 1. KILOCODE_TOKEN — Kilo managed gateway service
+    # 2. KILO_PROVIDER + API key — BYOK direct provider access
+    # 3. Cached auth.json — device auth from `kilo auth login` (subscription)
+    if [ -n "$kilocode_token" ]; then
+      log "Kilo gateway mode (KILOCODE_TOKEN set)"
+    elif [ -n "$kilo_provider" ]; then
       case "$kilo_provider" in
         anthropic)
           if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
@@ -619,10 +631,19 @@ case "$provider" in
             exit 1
           fi
           ;;
+        zai)
+          if [ -z "${ZAI_API_KEY:-}" ]; then
+            echo "ZAI_API_KEY is required when KILO_PROVIDER=zai." >&2
+            exit 1
+          fi
+          ;;
       esac
       log "Kilo BYOK mode: provider=${kilo_provider}"
+    elif [ -f "${HOME}/.local/share/kilo/auth.json" ]; then
+      log "Kilo subscription mode (cached auth.json)"
     else
-      log "Kilo gateway mode (KILOCODE_TOKEN set)"
+      echo "Kilo auth not configured. Set KILOCODE_TOKEN (gateway), KILO_PROVIDER (BYOK), or run: docker compose run --rm auth-kilo (subscription)." >&2
+      exit 1
     fi
 
     cmd=(kilo run --auto)

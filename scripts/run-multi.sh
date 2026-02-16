@@ -84,6 +84,10 @@ generate_kilo_config() {
       model_default="${KILO_MODEL:-anthropic/claude-sonnet-4-20250514}"
       provider_config='{"openrouter": {"options": {"apiKey": "{env:OPENROUTER_API_KEY}"}}}'
       ;;
+    zai)
+      model_default="${KILO_MODEL:-glm-4.7}"
+      provider_config='{"zai": {"options": {"zaiApiKey": "{env:ZAI_API_KEY}", "zaiApiLine": "international_coding"}}}'
+      ;;
     *)
       log "Warning: Unknown KILO_PROVIDER=${kilo_provider}; generated base config only"
       return 0
@@ -144,6 +148,12 @@ seed_provider_auth() {
   if [ -d "${source_home}/.config/kilo" ]; then
     mkdir -p "${agent_home}/.config/kilo"
     cp -R "${source_home}/.config/kilo"/. "${agent_home}/.config/kilo"/
+  fi
+  # Kilo: seed device auth credentials from ~/.local/share/kilo/
+  # auth.json is stored here after `kilo auth login` (1-year token).
+  if [ -f "${source_home}/.local/share/kilo/auth.json" ]; then
+    mkdir -p "${agent_home}/.local/share/kilo"
+    cp "${source_home}/.local/share/kilo/auth.json" "${agent_home}/.local/share/kilo/auth.json"
   fi
 
   # Kilo: auto-generate config if missing (prevents interactive prompts in --auto mode)
@@ -382,8 +392,9 @@ preflight_check() {
       fi
       ;;
     kilo)
-      if [ -z "${KILOCODE_TOKEN:-}" ] && [ -z "${KILO_PROVIDER:-}" ]; then
-        echo "Pre-flight: KILO_PROVIDER is required for kilo (unless KILOCODE_TOKEN is set for gateway mode)." >&2
+      if [ -z "${KILOCODE_TOKEN:-}" ] && [ -z "${KILO_PROVIDER:-}" ] \
+        && [ ! -f "/home/node/.local/share/kilo/auth.json" ]; then
+        echo "Pre-flight: Kilo auth not configured. Set KILOCODE_TOKEN (gateway), KILO_PROVIDER (BYOK), or run: docker compose run --rm auth-kilo (subscription)." >&2
         failures=$((failures + 1))
       fi
       ;;
@@ -499,6 +510,7 @@ for index in "${!agent_ids[@]}"; do
     seed_provider_home "/home/node/.claude" "$agent_home/.claude"
     seed_provider_home "/home/node/.config/claude" "$agent_home/.config/claude"
     seed_provider_home "/home/node/.config/kilo" "$agent_home/.config/kilo"
+    seed_provider_home "/home/node/.local/share/kilo" "$agent_home/.local/share/kilo"
 
     # Login shells (bash -lc) reset PATH from /etc/profile, losing the
     # Docker ENV that includes the npm global bin directory. Write a

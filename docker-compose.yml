@@ -25,6 +25,7 @@ x-agent-base: &agent-base
     - claude-home:/home/node/.claude
     - claude-config:/home/node/.config/claude
     - kilo-config:/home/node/.config/kilo
+    - kilo-data:/home/node/.local/share/kilo
   stdin_open: true
   tty: true
 
@@ -74,6 +75,7 @@ x-agent-env: &agent-env
   GEMINI_API_KEY_FILE: ${GEMINI_API_KEY_FILE:-}
   ANTHROPIC_API_KEY_FILE: ${ANTHROPIC_API_KEY_FILE:-}
   OPENROUTER_API_KEY_FILE: ${OPENROUTER_API_KEY_FILE:-}
+  ZAI_API_KEY_FILE: ${ZAI_API_KEY_FILE:-}
   KILO_PROVIDER: ${KILO_PROVIDER:-}
   KILO_MODEL: ${KILO_MODEL:-}
   KILOCODE_TOKEN_FILE: ${KILOCODE_TOKEN_FILE:-}
@@ -118,3 +120,4 @@ volumes:
   claude-home:
   claude-config:
   kilo-config:
+  kilo-data:

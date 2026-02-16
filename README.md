@@ -157,12 +157,39 @@ Then set `AGENT_AUTH_MODE=subscription` in `.env`.
 
 **Status:** EXPERIMENTAL — Kilo is under evaluation through Q2 2026.
 
-Kilo supports two authentication modes with different tradeoffs:
+Kilo supports three authentication modes with different tradeoffs:
 
-### BYOK (Bring Your Own Key) — Recommended
+### Subscription (Device Auth)
 
 **How it works:**
-- You provide API keys directly to Kilo for model access (Anthropic, OpenAI, Google, OpenRouter)
+- Authenticate once via browser using Kilo's device auth flow
+- Credentials are cached in `~/.local/share/kilo/auth.json` (1-year token)
+- Similar to Claude Code's OAuth token approach
+- No API keys or env vars needed after initial login
+
+**Setup:**
+
+```bash
+# One-time interactive login (opens browser)
+docker compose run --rm auth-kilo
+
+# .env — no auth env vars needed
+AGENT_PROVIDER=kilo
+```
+
+**Pros:**
+- Simplest setup — no API keys to manage
+- 1-year token lifetime (like Claude OAuth)
+- Access to all models in your Kilo subscription
+
+**Cons:**
+- Requires interactive browser login once
+- Token must be refreshed annually
+
+### BYOK (Bring Your Own Key)
+
+**How it works:**
+- You provide API keys directly to Kilo for model access (Anthropic, OpenAI, Google, OpenRouter, Z.ai)
 - Kilo acts as a unified CLI interface but uses your credentials
 - Charges apply to your provider accounts, not Kilo
 
@@ -171,8 +198,13 @@ Kilo supports two authentication modes with different tradeoffs:
 ```bash
 # .env
 AGENT_PROVIDER=kilo
-KILO_PROVIDER=openrouter  # or anthropic, openai, google
+KILO_PROVIDER=openrouter  # or anthropic, openai, google, zai
 OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
+
+# For Z.ai GLM models:
+# KILO_PROVIDER=zai
+# ZAI_API_KEY_FILE=/run/secrets/zai_api_key
+# KILO_MODEL=glm-4.7
 ```
 
 **Pros:**
@@ -213,9 +245,11 @@ KILOCODE_TOKEN_FILE=/run/secrets/kilocode_token
 
 ### Which to Choose?
 
+- **Getting started:** Subscription mode is simplest — just run `auth-kilo` once
 - **Production deployments:** Use BYOK for predictable costs and no rate limits
 - **Development/testing:** Gateway mode simplifies multi-model experimentation
 - **High-volume agents:** BYOK reduces per-request costs
+- **Z.ai GLM models:** Use BYOK with `KILO_PROVIDER=zai`
 
 ### Adoption Criteria
 
