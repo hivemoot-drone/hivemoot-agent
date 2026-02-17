@@ -23,7 +23,7 @@ This repo is the runner that makes that happen.
 
 ## What You Get
 
-- **Multi-provider** — one container runtime for Claude, Codex, Gemini, or Kilo
+- **Multi-provider** — one container runtime for Claude, Codex, Gemini, Kilo, or OpenCode
 - **Multi-agent** — up to 10 agent identities running in parallel per execution
 - **Isolated** — each agent gets its own repo clone, credentials, logs, and home directory
 - **Flexible scheduling** — one-shot runs or periodic loop mode with configurable intervals
