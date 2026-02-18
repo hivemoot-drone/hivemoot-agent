@@ -442,7 +442,18 @@ case "$provider" in
         echo "AGENT_TOOL_OPTIONS_JSON is set but jq is not installed." >&2
         exit 1
       fi
-      codex_reasoning_effort="$(printf '%s' "$agent_tool_options_json" | jq -r '.model_reasoning_effort // empty' 2>/dev/null || true)"
+      jq_parse_stderr_file="$(mktemp)"
+      if ! codex_reasoning_effort="$(printf '%s' "$agent_tool_options_json" | jq -r '.model_reasoning_effort // empty' 2>"$jq_parse_stderr_file")"; then
+        jq_parse_error="$(tr '\n' ' ' <"$jq_parse_stderr_file" | sed -e 's/[[:space:]]\+/ /g' -e 's/^ //' -e 's/ $//')"
+        rm -f "$jq_parse_stderr_file"
+        if [ -n "$jq_parse_error" ]; then
+          echo "Invalid AGENT_TOOL_OPTIONS_JSON: ${jq_parse_error}" >&2
+        else
+          echo "Invalid AGENT_TOOL_OPTIONS_JSON: failed to parse JSON payload." >&2
+        fi
+        exit 1
+      fi
+      rm -f "$jq_parse_stderr_file"
       case "$codex_reasoning_effort" in
         ""|low|medium|high|xhigh) ;;
         extra_high|extra-high)
