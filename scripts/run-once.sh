@@ -130,6 +130,7 @@ fresh_clone="${FRESH_CLONE:-1}"
 prompt_file="${AGENT_PROMPT_FILE:-/opt/hivemoot-agent/prompts/default.md}"
 extra_prompt="${AGENT_EXTRA_PROMPT:-}"
 agent_model="${AGENT_MODEL:-}"
+agent_tool_options_json="${AGENT_TOOL_OPTIONS_JSON:-{}}"
 timeout_secs="${AGENT_TIMEOUT_SECONDS:-1800}"
 agent_git_name="${AGENT_GIT_NAME:-}"
 agent_git_email="${AGENT_GIT_EMAIL:-}"
@@ -435,9 +436,32 @@ case "$provider" in
       fi
     fi
 
+    codex_reasoning_effort=""
+    if [ "$agent_tool_options_json" != "{}" ]; then
+      if ! command -v jq >/dev/null 2>&1; then
+        echo "AGENT_TOOL_OPTIONS_JSON is set but jq is not installed." >&2
+        exit 1
+      fi
+      codex_reasoning_effort="$(printf '%s' "$agent_tool_options_json" | jq -r '.model_reasoning_effort // empty' 2>/dev/null || true)"
+      case "$codex_reasoning_effort" in
+        ""|low|medium|high|xhigh) ;;
+        extra_high|extra-high)
+          codex_reasoning_effort="xhigh"
+          ;;
+        *)
+          echo "Invalid codex model_reasoning_effort: ${codex_reasoning_effort} (expected low|medium|high|xhigh)." >&2
+          exit 1
+          ;;
+      esac
+    fi
+
     cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --cd "$repo_dir" --json)
     if [ -n "$agent_model" ]; then
       cmd+=(--model "$agent_model")
+    fi
+    if [ -n "$codex_reasoning_effort" ]; then
+      cmd+=(--config "model_reasoning_effort=\"${codex_reasoning_effort}\"")
+      log "Codex reasoning effort: ${codex_reasoning_effort}"
     fi
     cmd+=("$prompt")
     ;;
