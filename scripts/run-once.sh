@@ -592,6 +592,29 @@ esac
 EOF
   chmod 700 "$askpass"
 
+  # Try to sync an existing checkout; on any failure, delete and reclone.
+  local sync_ok=0
+  if [ -d "$repo_dir/.git" ]; then
+    log "Reusing existing clone: ${repo_dir}"
+    local default_branch=""
+    if default_branch="$(resolve_remote_default_branch "$repo_dir")"; then
+      log "Updating to origin/${default_branch}"
+      if git -C "$repo_dir" fetch --prune origin 2>&1 \
+        && git -C "$repo_dir" reset --hard "origin/${default_branch}" 2>&1 \
+        && git -C "$repo_dir" clean -fdx 2>&1; then
+        sync_ok=1
+      else
+        log "Sync failed; deleting stale checkout and recloning"
+      fi
+    else
+      log "Could not determine default branch; deleting stale checkout and recloning"
+    fi
+
+    if [ "$sync_ok" -eq 0 ]; then
+      rm -rf "$repo_dir"
+    fi
+  fi
+
   if [ ! -d "$repo_dir/.git" ]; then
     local clone_args=(--single-branch)
     local depth_label="full"
@@ -606,17 +629,6 @@ EOF
       rm -f "$askpass"
       echo "Failed to clone ${target_repo}. Check token and repo access." >&2
       exit 1
-    fi
-  else
-    log "Reusing existing clone: ${repo_dir}"
-    local default_branch=""
-    if ! default_branch="$(resolve_remote_default_branch "$repo_dir")"; then
-      log "Warning: could not determine default branch; skipping fetch/reset"
-    else
-      log "Updating to origin/${default_branch}"
-      git -C "$repo_dir" fetch --prune origin 2>&1 || log "Warning: git fetch failed"
-      git -C "$repo_dir" reset --hard "origin/${default_branch}" 2>&1 || log "Warning: git reset failed"
-      git -C "$repo_dir" clean -fdx 2>&1 || log "Warning: git clean failed"
     fi
   fi
 
