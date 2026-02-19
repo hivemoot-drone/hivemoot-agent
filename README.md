@@ -156,7 +156,7 @@ Requires `TARGET_REPO` and user tokens (not installation tokens). Additional set
 - `WATCH_POLL_INTERVAL` — seconds between mention polls (default: 300)
 - `FRESH_CLONE` — set `0` to reuse each agent clone between runs (recommended for faster mention follow-ups)
 
-When `AGENT_PROVIDER=codex`, mention-triggered runs now keep one Codex session per GitHub notification thread and resume it on the next mention in that same thread. Session mappings are stored under each agent workspace in a per-tool folder (for example `/workspace/repo/agents/<agent-id>/sessions/codex/session-map.tsv`) and are scoped by runtime settings (repo/provider/model/tool options) to avoid cross-config reuse.
+When `AGENT_PROVIDER=codex`, mention-triggered runs keep one Codex session per GitHub notification thread and resume it on follow-up mentions. Session mappings are stored under each agent workspace in a per-tool folder (for example `/workspace/repo/agents/<agent-id>/sessions/codex/session-map.tsv`) and are scoped by runtime settings (repo/provider/model/tool options) to avoid cross-config reuse. Resume is strict: sessions reset after 12h idle or 24h total age, and any failed resume is retried once as a fresh session.
 
 ## Subscription Auth (Optional)
 
