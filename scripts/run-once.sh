@@ -516,6 +516,21 @@ Local repository path: ${repo_dir}
 "
 fi
 
+# Technical notes block: runtime details agents should be aware of.
+# Append new notes here as the environment evolves.
+technical_notes=""
+if [ "$clone_depth" -gt 0 ]; then
+  technical_notes="${technical_notes}
+- Shallow clone (depth ${clone_depth}). git log/blame are truncated. Run \`git fetch --unshallow\` if you need full history."
+fi
+
+if [ -n "$technical_notes" ]; then
+  system_prompt="${system_prompt}
+Technical notes:
+${technical_notes}
+"
+fi
+
 # User message: mention context / extra instructions when present,
 # otherwise a default directive.
 default_user_message="Make meaningful contributions to the repository according to your role instructions."
