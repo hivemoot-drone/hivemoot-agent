@@ -147,7 +147,7 @@ services:
     entrypoint: ["claude"]
 
   auth-claude-setup-token:
-    <<: *agent-base
+    <<: *agent-base-persistent
     entrypoint: ["bash", "-lc"]
     command:
       - |
