@@ -163,25 +163,6 @@ extract_codex_session_id_from_log() {
   sed -nE 's/.*"type":"session_meta".*"id":"([0-9a-fA-F-]{36})".*/\1/p' "$path" | head -n 1
 }
 
-maybe_migrate_legacy_session_map() {
-  local legacy_file="$1"
-  local new_file="$2"
-
-  if [ -f "$new_file" ] || [ ! -f "$legacy_file" ]; then
-    return 0
-  fi
-
-  mkdir -p "$(dirname "$new_file")"
-  if mv "$legacy_file" "$new_file" 2>/dev/null; then
-    log "Migrated legacy session map: $(basename "$legacy_file") -> $(basename "$new_file")"
-    return 0
-  fi
-
-  cp "$legacy_file" "$new_file"
-  chmod 600 "$new_file" 2>/dev/null || true
-  log "Copied legacy session map: $(basename "$legacy_file") -> $(basename "$new_file")"
-}
-
 build_scoped_session_key() {
   local base_key="$1"
   local repo_full_name="$2"
@@ -243,10 +224,6 @@ fi
 
 provider_session_map_dir="${workspace_root}/sessions/${provider}"
 provider_session_map_file="${provider_session_map_dir}/session-map.tsv"
-legacy_shared_tool_session_map_file="${workspace_root}/tool-session-map.tsv"
-legacy_codex_session_map_file="${workspace_root}/codex-session-map.tsv"
-maybe_migrate_legacy_session_map "$legacy_shared_tool_session_map_file" "$provider_session_map_file"
-maybe_migrate_legacy_session_map "$legacy_codex_session_map_file" "$provider_session_map_file"
 codex_resume_key="$(build_scoped_session_key "$agent_session_key" "$target_repo" "$provider" "$agent_model" "$agent_tool_options_json")"
 
 case "$auth_mode" in
