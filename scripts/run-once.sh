@@ -626,7 +626,10 @@ case "$provider" in
     codex_fresh_cmd=(codex exec "${codex_cmd_common[@]}" "$prompt")
 
     if [ "$session_resume" = "1" ] && [ -n "$codex_resume_key" ]; then
-      if codex exec resume --help >/dev/null 2>&1; then
+      # Probe resume support defensively: some CLI builds may expose
+      # `resume` but handle `resume --help` inconsistently.
+      if codex exec resume --help >/dev/null 2>&1 \
+        || codex exec --help 2>&1 | grep -Eq '(^|[[:space:]])resume([[:space:]]|$)'; then
         codex_resume_supported=1
       else
         log "Codex resume unavailable; starting fresh session for key=${agent_session_key}"
@@ -849,6 +852,9 @@ run_selected_command() {
   local attempt_log_file=""
 
   ec_file="$(mktemp)"
+  # `log_file` is the full merged run log across attempts.
+  # `attempt_log_file` is only this attempt; `last_command_log` points to
+  # the most recent attempt so session-id extraction is attempt-scoped.
   attempt_log_file="$(mktemp "${log_dir}/${run_id}.attempt.XXXXXX.log")"
   if [ -n "${last_command_log:-}" ] && [ "$last_command_log" != "$log_file" ] && [ -f "$last_command_log" ]; then
     rm -f "$last_command_log"
@@ -873,7 +879,10 @@ run_selected_command() {
   set -e
 }
 
+# Keep a persistent merged log for operator debugging across retries.
 : > "$log_file"
+# Start with merged log sentinel; run_selected_command updates this to the
+# per-attempt file after each run.
 last_command_log="$log_file"
 run_selected_command
 
