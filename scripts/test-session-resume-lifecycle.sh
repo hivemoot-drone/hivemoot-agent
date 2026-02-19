@@ -225,8 +225,17 @@ EOF
 
 setup_case_repo() {
   local repo_dir="$1"
-  mkdir -p "$repo_dir"
-  git init -q "$repo_dir"
+  local bare_dir="${repo_dir}.bare"
+
+  # Create a local bare repo as origin so fetch/reset/clean succeed
+  # during the reuse-sync path in clone_repo().
+  git init -q --bare "$bare_dir"
+  git init -q -b main "$repo_dir"
+  git -C "$repo_dir" config user.name "test"
+  git -C "$repo_dir" config user.email "test@test"
+  git -C "$repo_dir" remote add origin "$bare_dir"
+  git -C "$repo_dir" commit --allow-empty -q -m "init"
+  git -C "$repo_dir" push -q -u origin main
 }
 
 run_run_once() {
