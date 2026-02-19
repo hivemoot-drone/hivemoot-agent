@@ -183,7 +183,12 @@ extract_codex_session_id_from_log() {
     return 0
   fi
 
-  sed -nE 's/.*"type":"session_meta".*"id":"([0-9a-fA-F-]{36})".*/\1/p' "$path" | tail -n 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -Rr 'fromjson? | select(.type=="thread.started") | .thread_id // empty' "$path" | head -n 1
+    return 0
+  fi
+
+  sed -nE 's/.*"type":"thread\.started".*"thread_id":"([0-9a-fA-F-]{36})".*/\1/p' "$path" | head -n 1
 }
 
 build_scoped_session_key() {
@@ -294,9 +299,9 @@ else
   job_home=""
 fi
 
-provider_session_map_dir="${workspace_root}/sessions/${provider}"
-provider_session_map_file="${provider_session_map_dir}/session-map.tsv"
 codex_resume_key="$(build_scoped_session_key "$agent_session_key" "$target_repo" "$provider" "$agent_model" "$agent_tool_options_json")"
+provider_session_map_dir="${workspace_root}/sessions/${provider}"
+provider_session_map_file="${provider_session_map_dir}/tool-session-map.tsv"
 
 case "$auth_mode" in
   auto|api_key|subscription) ;;
@@ -551,6 +556,7 @@ codex_active_session_id=""
 codex_active_session_created_epoch=""
 codex_used_resume=0
 codex_fresh_cmd=()
+codex_resume_supported=0
 case "$provider" in
   codex)
     if ! command -v codex >/dev/null 2>&1; then
@@ -619,7 +625,6 @@ case "$provider" in
     fi
     codex_fresh_cmd=(codex exec "${codex_cmd_common[@]}" "$prompt")
 
-    codex_resume_supported=0
     if [ "$session_resume" = "1" ] && [ -n "$codex_resume_key" ]; then
       if codex exec resume --help >/dev/null 2>&1; then
         codex_resume_supported=1
@@ -841,28 +846,35 @@ log "Starting provider=${provider} auth_mode=${auth_mode} repo=${target_repo}"
 exit_code=0
 run_selected_command() {
   local ec_file=""
+  local attempt_log_file=""
 
   ec_file="$(mktemp)"
+  attempt_log_file="$(mktemp "${log_dir}/${run_id}.attempt.XXXXXX.log")"
+  if [ -n "${last_command_log:-}" ] && [ "$last_command_log" != "$log_file" ] && [ -f "$last_command_log" ]; then
+    rm -f "$last_command_log"
+  fi
   set +e
   if [ "$run_in_repo" = "1" ]; then
     if command -v timeout >/dev/null 2>&1; then
-      (cd "$repo_dir" && timeout "$timeout_secs" "${cmd[@]}"; printf '%d' "$?" > "$ec_file") 2>&1 | tee -a "$log_file"
+      (cd "$repo_dir" && timeout "$timeout_secs" "${cmd[@]}"; printf '%d' "$?" > "$ec_file") 2>&1 | tee -a "$log_file" | tee "$attempt_log_file"
     else
-      (cd "$repo_dir" && "${cmd[@]}"; printf '%d' "$?" > "$ec_file") 2>&1 | tee -a "$log_file"
+      (cd "$repo_dir" && "${cmd[@]}"; printf '%d' "$?" > "$ec_file") 2>&1 | tee -a "$log_file" | tee "$attempt_log_file"
     fi
   else
     if command -v timeout >/dev/null 2>&1; then
-      (timeout "$timeout_secs" "${cmd[@]}"; printf '%d' "$?" > "$ec_file") 2>&1 | tee -a "$log_file"
+      (timeout "$timeout_secs" "${cmd[@]}"; printf '%d' "$?" > "$ec_file") 2>&1 | tee -a "$log_file" | tee "$attempt_log_file"
     else
-      ("${cmd[@]}"; printf '%d' "$?" > "$ec_file") 2>&1 | tee -a "$log_file"
+      ("${cmd[@]}"; printf '%d' "$?" > "$ec_file") 2>&1 | tee -a "$log_file" | tee "$attempt_log_file"
     fi
   fi
   exit_code="$(cat "$ec_file")"
   rm -f "$ec_file"
+  last_command_log="$attempt_log_file"
   set -e
 }
 
 : > "$log_file"
+last_command_log="$log_file"
 run_selected_command
 
 # Strict policy: at most one resume failure before forcing fresh.
@@ -875,8 +887,8 @@ if [ "$provider" = "codex" ] && [ "$codex_used_resume" -eq 1 ] && [ "$exit_code"
   run_selected_command
 fi
 
-if [ "$provider" = "codex" ] && [ -n "$codex_resume_key" ]; then
-  codex_session_from_log="$(extract_codex_session_id_from_log "$log_file")"
+if [ "$provider" = "codex" ] && [ -n "$codex_resume_key" ] && [ "$exit_code" -eq 0 ]; then
+  codex_session_from_log="$(extract_codex_session_id_from_log "$last_command_log")"
   if is_valid_uuid "$codex_session_from_log"; then
     codex_saved_at_epoch="$(date +%s)"
     codex_created_to_store="$codex_saved_at_epoch"
@@ -896,6 +908,10 @@ fi
 
 if [ "$exit_code" -eq 124 ]; then
   log "Run timed out after ${timeout_secs}s"
+fi
+
+if [ -n "${last_command_log:-}" ] && [ "$last_command_log" != "$log_file" ] && [ -f "$last_command_log" ]; then
+  rm -f "$last_command_log"
 fi
 
 log "Run finished with exit_code=${exit_code}. Log: ${log_file}"

@@ -159,7 +159,7 @@ Requires `TARGET_REPO` and user tokens (not installation tokens). Additional set
 - `SESSION_RESUME_MAX_AGE_HOURS` — reset sessions older than this total age window (default: `24`)
 - `FRESH_CLONE` — set `0` to reuse each agent clone between runs (recommended for faster mention follow-ups)
 
-When `AGENT_PROVIDER=codex`, mention-triggered runs keep one Codex session per GitHub notification thread and resume it on follow-up mentions. Session mappings are stored under each agent workspace in a per-tool folder (for example `/workspace/repo/agents/<agent-id>/sessions/codex/session-map.tsv`) and are scoped by runtime settings (repo/provider/model/tool options) to avoid cross-config reuse. Resume is strict: sessions reset when idle/age limits are exceeded (`SESSION_RESUME_MAX_IDLE_HOURS` / `SESSION_RESUME_MAX_AGE_HOURS`), and any failed resume is retried once as a fresh session.
+When `AGENT_PROVIDER=codex`, mention-triggered runs keep one Codex session per GitHub notification thread and resume follow-up mentions with the saved thread/session UUID (`codex exec resume <SESSION_ID>`). The UUID is extracted from Codex `--json` output (`thread.started.thread_id`) and persisted under each agent workspace (for example `/workspace/repo/agents/<agent-id>/sessions/codex/tool-session-map.tsv`), scoped by runtime settings (repo/provider/model/tool options + mention key) to avoid cross-config reuse. Periodic runs (no mention session key) always start fresh. Resume is strict: sessions reset when idle/age limits are exceeded (`SESSION_RESUME_MAX_IDLE_HOURS` / `SESSION_RESUME_MAX_AGE_HOURS`), and any failed resume is retried once as a fresh session.
 
 ## Subscription Auth (Optional)
 
