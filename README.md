@@ -50,9 +50,9 @@ This repo is the agent runner — step 3 of setting up a Hivemoot:
 - A target GitHub repo (`owner/repo`)
 - One GitHub token per agent identity
 - Provider auth:
-  - Claude: `ANTHROPIC_API_KEY` (or `_FILE`) or subscription login
-  - Codex: `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` or subscription login
-  - Gemini: `GOOGLE_API_KEY` / `GEMINI_API_KEY` (or `_FILE`) or subscription login
+  - Claude: `ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY_FILE`
+  - Codex: `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE`
+  - Gemini: `GOOGLE_API_KEY` / `GEMINI_API_KEY` (or `_FILE`)
   - Kilo: `KILO_PROVIDER` + matching API key (BYOK recommended), or `KILOCODE_TOKEN` (gateway). See [Kilo Provider Comparison](#kilo-provider-comparison)
 
 ## Quick Start
@@ -161,46 +161,31 @@ Requires `TARGET_REPO` and user tokens (not installation tokens). Additional set
 
 When `AGENT_PROVIDER=codex`, mention-triggered runs keep one Codex session per GitHub notification thread and resume follow-up mentions with the saved thread/session UUID (`codex exec resume <SESSION_ID>`). The UUID is extracted from Codex `--json` output (`thread.started.thread_id`) and persisted under each agent workspace (for example `/workspace/repo/agents/<agent-id>/sessions/codex/tool-session-map.tsv`), scoped by runtime settings (repo/provider/model/tool options + mention key) to avoid cross-config reuse. Periodic runs (no mention session key) always start fresh. Resume is strict: sessions reset when idle/age limits are exceeded (`SESSION_RESUME_MAX_IDLE_HOURS` / `SESSION_RESUME_MAX_AGE_HOURS`), and any failed resume is retried once as a fresh session.
 
-## Ephemeral Credential Mode (API-Key Only)
+## Credential Storage (Default)
 
-Use the hardened service when you want provider credentials/config in RAM (`tmpfs`)
-instead of persistent Docker volumes:
+The default `hivemoot-agent` service is hardened for `api_key` mode:
 
-```bash
-docker compose run --rm -v ./secrets:/run/secrets:ro hivemoot-agent-ephemeral
-```
+- Provider credential/config paths are RAM-backed (`tmpfs`) and do not persist on disk.
+- Per-run agent `HOME` paths resolve to `/tmp/hivemoot-agent-home/...` in `api_key` mode.
+- Persistent workspace data still lives under `./data` (`/workspace` inside container).
 
-```bash
-RUN_MODE=loop AGENT_AUTH_MODE=api_key docker compose up hivemoot-agent-ephemeral
-```
-
-This mode sets `EPHEMERAL_CREDENTIAL_STORAGE=1` and requires `AGENT_AUTH_MODE=api_key`.
-It is incompatible with subscription auth because `auth-*` login state must persist between runs.
-When enabled, per-run agent `HOME` paths move to `/tmp/hivemoot-agent-home/...` so
-provider auth files are not written under `/workspace`.
-
-## Subscription Auth (Optional)
-
-For subscription mode (no API key needed), authenticate once per provider:
+Use the default service as usual:
 
 ```bash
-docker compose run --rm auth-claude
-docker compose run --rm auth-claude-setup-token
-docker compose run --rm auth-codex
-docker compose run --rm auth-gemini
-docker compose run --rm auth-kilo
+docker compose run --rm -v ./secrets:/run/secrets:ro hivemoot-agent
 ```
 
-Then set `AGENT_AUTH_MODE=subscription` in `.env`.
+## Local Subscription Development (Optional)
 
-For Claude headless automation, `auth-claude-setup-token` is recommended. It runs
-`claude setup-token` and writes `~/.claude.json` with
-`{"hasCompletedOnboarding": true}` so isolated agent homes can skip interactive onboarding.
-Store the token in a secret file and set:
+If you want local-only subscription login workflows, use the companion compose file:
 
 ```bash
-CLAUDE_CODE_OAUTH_TOKEN_FILE=/run/secrets/claude_oauth_token
+docker compose -f docker-compose.yml -f docker-compose.subscription.local.yml run --rm auth-codex
+docker compose -f docker-compose.yml -f docker-compose.subscription.local.yml run --rm hivemoot-agent-subscription
 ```
+
+The `docker-compose.subscription.local.yml` file restores persistent provider homes
+and `auth-*` services for local development. Keep this path out of production/default runs.
 
 ## Kilo Provider Comparison
 
@@ -373,7 +358,7 @@ AGENT_AUTH_MODE=api_key
 ANTHROPIC_API_KEY_FILE=/run/secrets/anthropic_api_key
 ```
 
-### Example: Claude subscription token
+### Example: Claude subscription token (local override only)
 
 ```bash
 printf '%s' "sk-ant-oat01-xxx" > secrets/claude_oauth_token
@@ -385,6 +370,13 @@ chmod 600 secrets/claude_oauth_token
 AGENT_PROVIDER=claude
 AGENT_AUTH_MODE=subscription
 CLAUDE_CODE_OAUTH_TOKEN_FILE=/run/secrets/claude_oauth_token
+```
+
+Use this only with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.subscription.local.yml run --rm auth-claude-setup-token
+docker compose -f docker-compose.yml -f docker-compose.subscription.local.yml run --rm hivemoot-agent-subscription
 ```
 
 ### Example: Codex
@@ -421,7 +413,8 @@ OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
 - Do not commit `.env`, token files, or API keys
 - Prefer `*_FILE` secrets over raw env values — they avoid exposure via `docker inspect`, process listings, and container logs
 - Use least-privilege GitHub tokens
-- Treat `./data/homes/<agent-id>` as sensitive credential state
+- Default `api_key` runs keep provider credential homes on `tmpfs` (RAM-backed).
+- In local subscription override mode, treat provider volumes and `./data/homes/<agent-id>` as sensitive credential state.
 
 ## Troubleshooting
 
@@ -430,8 +423,7 @@ OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
 | `TARGET_REPO is required` | Set `TARGET_REPO=owner/repo` in `.env` |
 | `GitHub token cannot access target repository` | Token lacks access to that repo |
 | Provider auth errors in `api_key` mode | Verify key env/file is set |
-| `EPHEMERAL_CREDENTIAL_STORAGE=1 requires AGENT_AUTH_MODE=api_key` | Use `AGENT_AUTH_MODE=api_key`, or switch to `hivemoot-agent` for subscription auth |
-| Subscription auth errors | Run the matching `auth-*` command first |
+| Subscription auth errors | Use `docker-compose.subscription.local.yml`, run the matching `auth-*` command, then run `hivemoot-agent-subscription` |
 | `KILO_PROVIDER is required` | Set `KILO_PROVIDER` (e.g. `openrouter`) or `KILOCODE_TOKEN` |
 | Kilo permission prompts in `--auto` mode | The `--auto` flag should bypass all prompts; check Kilo CLI version (`kilo --version`) |
 

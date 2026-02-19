@@ -19,16 +19,20 @@ launch_jitter_min="${LAUNCH_JITTER_MIN_SECS:-120}"
 launch_jitter_max="${LAUNCH_JITTER_MAX_SECS:-180}"
 max_agents=10
 token_tmp_root="/tmp/hivemoot-agent-token-files"
-ephemeral_credential_storage_raw="${EPHEMERAL_CREDENTIAL_STORAGE:-0}"
+provider="${AGENT_PROVIDER:-claude}"
+auth_mode="${AGENT_AUTH_MODE:-auto}"
+effective_auth_mode=""
 
-if ! ephemeral_credential_storage="$(normalize_ephemeral_credential_storage "$ephemeral_credential_storage_raw")"; then
-  echo "Unsupported EPHEMERAL_CREDENTIAL_STORAGE: ${ephemeral_credential_storage_raw}. Use 0|1." >&2
-  exit 1
-fi
+case "$auth_mode" in
+  auto|api_key|subscription) ;;
+  *)
+    echo "Unsupported AGENT_AUTH_MODE: ${auth_mode}. Use auto|api_key|subscription." >&2
+    exit 1
+    ;;
+esac
 
-if [ "$ephemeral_credential_storage" -eq 1 ] && [ "${AGENT_AUTH_MODE:-auto}" != "api_key" ]; then
-  echo "EPHEMERAL_CREDENTIAL_STORAGE=1 requires AGENT_AUTH_MODE=api_key." >&2
-  echo "Subscription auth needs persistent provider homes from docker compose auth-* login runs." >&2
+if ! effective_auth_mode="$(resolve_effective_auth_mode "$provider" "$auth_mode")"; then
+  echo "Unsupported auth mode/provider combination: provider=${provider} auth_mode=${auth_mode}" >&2
   exit 1
 fi
 
@@ -318,7 +322,7 @@ for index in "${!agent_ids[@]}"; do
   agent_workspace="${workspace_root}/agents/${agent_id}"
   agent_repo="${agent_workspace}/repo"
   agent_log_dir="${workspace_root}/runs/${agent_id}"
-  agent_home="$(resolve_managed_agent_home "$workspace_root" "$agent_id" "$ephemeral_credential_storage")"
+  agent_home="$(resolve_managed_agent_home "$workspace_root" "$agent_id" "$effective_auth_mode")"
   wrapper_log="${agent_log_dir}/$(date '+%Y%m%d-%H%M%S')-${agent_id}-wrapper.log"
 
   mkdir -p "$agent_workspace" "$agent_log_dir" "$agent_home"

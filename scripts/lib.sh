@@ -19,37 +19,85 @@ trim() {
   printf '%s' "$value"
 }
 
-normalize_ephemeral_credential_storage() {
-  local raw_value="${1:-0}"
+resolve_effective_auth_mode() {
+  local provider="$1"
+  local configured_auth_mode="${2:-auto}"
 
-  case "$raw_value" in
-    1|true|TRUE|yes|YES) printf '1' ;;
-    ''|0|false|FALSE|no|NO) printf '0' ;;
-    *) return 1 ;;
+  case "$configured_auth_mode" in
+    api_key|subscription)
+      printf '%s' "$configured_auth_mode"
+      return 0
+      ;;
+    auto|'')
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  case "$provider" in
+    codex)
+      if [ -n "${OPENAI_API_KEY:-}" ]; then
+        printf 'api_key'
+      else
+        printf 'subscription'
+      fi
+      ;;
+    gemini)
+      if [ -n "${GOOGLE_API_KEY:-}" ] || [ -n "${GEMINI_API_KEY:-}" ]; then
+        printf 'api_key'
+      else
+        printf 'subscription'
+      fi
+      ;;
+    claude)
+      if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        printf 'api_key'
+      else
+        printf 'subscription'
+      fi
+      ;;
+    kilo)
+      if [ -n "${KILOCODE_TOKEN:-}" ] || [ -n "${KILO_PROVIDER:-}" ]; then
+        printf 'api_key'
+      else
+        printf 'subscription'
+      fi
+      ;;
+    opencode)
+      if [ -n "${OPENCODE_PROVIDER:-}" ]; then
+        printf 'api_key'
+      else
+        printf 'subscription'
+      fi
+      ;;
+    *)
+      return 1
+      ;;
   esac
 }
 
 resolve_managed_agent_home() {
   local workspace_root="$1"
   local agent_id="$2"
-  local ephemeral_credential_storage="${3:-0}"
+  local effective_auth_mode="${3:-api_key}"
 
-  if [ "$ephemeral_credential_storage" = "1" ]; then
-    printf '/tmp/hivemoot-agent-home/agents/%s' "$agent_id"
-  else
+  if [ "$effective_auth_mode" = "subscription" ]; then
     printf '%s/homes/%s' "$workspace_root" "$agent_id"
+  else
+    printf '/tmp/hivemoot-agent-home/agents/%s' "$agent_id"
   fi
 }
 
 resolve_job_home() {
   local workspace_root="$1"
   local job_id="$2"
-  local ephemeral_credential_storage="${3:-0}"
+  local effective_auth_mode="${3:-api_key}"
 
-  if [ "$ephemeral_credential_storage" = "1" ]; then
-    printf '/tmp/hivemoot-agent-home/jobs/%s' "$job_id"
-  else
+  if [ "$effective_auth_mode" = "subscription" ]; then
     printf '%s/%s/home' "$workspace_root" "$job_id"
+  else
+    printf '/tmp/hivemoot-agent-home/jobs/%s' "$job_id"
   fi
 }
 

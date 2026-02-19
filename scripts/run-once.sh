@@ -251,7 +251,6 @@ should_resume_session() {
 
 provider="${AGENT_PROVIDER:-claude}"
 auth_mode="${AGENT_AUTH_MODE:-auto}"
-ephemeral_credential_storage="${EPHEMERAL_CREDENTIAL_STORAGE:-0}"
 hivemoot_buzz_role="${HIVEMOOT_BUZZ_ROLE:-}"
 target_repo="${TARGET_REPO:-}"
 workspace_root="${WORKSPACE_ROOT:-/workspace}"
@@ -267,12 +266,7 @@ session_resume_max_age_hours="${SESSION_RESUME_MAX_AGE_HOURS:-24}"
 agent_git_name="${AGENT_GIT_NAME:-}"
 agent_git_email="${AGENT_GIT_EMAIL:-}"
 agent_session_key="${AGENT_SESSION_KEY:-}"
-ephemeral_credential_storage_raw="$ephemeral_credential_storage"
-
-if ! ephemeral_credential_storage="$(normalize_ephemeral_credential_storage "$ephemeral_credential_storage")"; then
-  echo "Unsupported EPHEMERAL_CREDENTIAL_STORAGE: ${ephemeral_credential_storage_raw}. Use 0|1." >&2
-  exit 1
-fi
+effective_auth_mode=""
 
 case "$session_resume" in
   0|1) ;;
@@ -292,6 +286,19 @@ if ! is_positive_integer "$session_resume_max_age_hours"; then
   exit 1
 fi
 
+case "$auth_mode" in
+  auto|api_key|subscription) ;;
+  *)
+    echo "Unsupported AGENT_AUTH_MODE: ${auth_mode}. Use auto|api_key|subscription." >&2
+    exit 1
+    ;;
+esac
+
+if ! effective_auth_mode="$(resolve_effective_auth_mode "$provider" "$auth_mode")"; then
+  echo "Unsupported auth mode/provider combination: provider=${provider} auth_mode=${auth_mode}" >&2
+  exit 1
+fi
+
 # When REPO_DIR/LOG_DIR are set externally (run-multi.sh, run-loop.sh),
 # isolation is handled by the caller. Otherwise, generate a JOB_ID to
 # namespace workspace/HOME/logs so every standalone run is isolated.
@@ -308,7 +315,7 @@ fi
 if [ -n "$job_id" ] && [ "$managed_mode" -eq 0 ]; then
   repo_dir="${workspace_root}/${job_id}/repo"
   log_dir="${workspace_root}/${job_id}/runs"
-  job_home="$(resolve_job_home "$workspace_root" "$job_id" "$ephemeral_credential_storage")"
+  job_home="$(resolve_job_home "$workspace_root" "$job_id" "$effective_auth_mode")"
   log "Job isolation: JOB_ID=${job_id}"
 else
   repo_dir="${REPO_DIR:-${workspace_root}/repo}"
@@ -319,20 +326,6 @@ fi
 codex_resume_key="$(build_scoped_session_key "$agent_session_key" "$target_repo" "$provider" "$agent_model" "$agent_tool_options_json")"
 provider_session_map_dir="${workspace_root}/sessions/${provider}"
 provider_session_map_file="${provider_session_map_dir}/tool-session-map.tsv"
-
-case "$auth_mode" in
-  auto|api_key|subscription) ;;
-  *)
-    echo "Unsupported AGENT_AUTH_MODE: ${auth_mode}. Use auto|api_key|subscription." >&2
-    exit 1
-    ;;
-esac
-
-if [ "$ephemeral_credential_storage" -eq 1 ] && [ "$auth_mode" != "api_key" ]; then
-  echo "EPHEMERAL_CREDENTIAL_STORAGE=1 requires AGENT_AUTH_MODE=api_key." >&2
-  echo "Subscription auth needs persistent provider homes from docker compose auth-* login runs." >&2
-  exit 1
-fi
 
 validate_target_repo "$target_repo"
 
@@ -458,7 +451,7 @@ if [ -n "$job_home" ]; then
   log "Job HOME set to: ${job_home}"
 fi
 
-# Per-job cleanup: remove ephemeral state on exit when JOB_ID is set.
+# Per-job cleanup: remove transient state on exit when JOB_ID is set.
 # Registered early (before clone_repo) so that any failure between the
 # HOME redirect and provider launch still gets cleaned up.
 # shellcheck disable=SC2317,SC2329  # invoked via trap
@@ -604,7 +597,7 @@ case "$provider" in
 
     if [ "$codex_auth_mode" = "subscription" ]; then
       if ! codex login status >/dev/null 2>&1; then
-        echo "Codex subscription login not found. Run: docker compose run --rm auth-codex" >&2
+        echo "Codex subscription login not found. Run with local override: docker compose -f docker-compose.yml -f docker-compose.subscription.local.yml run --rm auth-codex" >&2
         exit 1
       fi
     fi
@@ -760,7 +753,7 @@ You are resuming a prior session for this mention thread. Some data in your cont
       if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
         log "Using Claude long-lived OAuth token"
       elif [ ! -d "${HOME}/.claude" ] && [ ! -d "${HOME}/.config/claude" ]; then
-        echo "Claude subscription credentials not found. Run: docker compose run --rm auth-claude" >&2
+        echo "Claude subscription credentials not found. Run with local override: docker compose -f docker-compose.yml -f docker-compose.subscription.local.yml run --rm auth-claude" >&2
         exit 1
       else
         log "Using Claude subscription/cached auth (no API key required)"
