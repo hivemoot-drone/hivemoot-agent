@@ -104,6 +104,65 @@ done
 # shellcheck source=scripts/opencode-helpers.sh
 . "${SCRIPT_DIR}/opencode-helpers.sh"
 
+is_valid_uuid() {
+  local value="$1"
+  printf '%s' "$value" | grep -Eq '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+}
+
+load_session_id_for_key() {
+  local map_file="$1"
+  local session_key="$2"
+
+  if [ ! -f "$map_file" ] || [ -z "$session_key" ]; then
+    return 0
+  fi
+
+  awk -F '\t' -v key="$session_key" '
+    $1 == key {
+      sid = $2
+    }
+    END {
+      if (sid != "") {
+        print sid
+      }
+    }
+  ' "$map_file"
+}
+
+save_session_id_for_key() {
+  local map_file="$1"
+  local session_key="$2"
+  local session_id="$3"
+  local map_dir=""
+  local tmp_file=""
+
+  if [ -z "$session_key" ] || [ -z "$session_id" ]; then
+    return 0
+  fi
+
+  map_dir="$(dirname "$map_file")"
+  mkdir -p "$map_dir"
+  tmp_file="$(mktemp "${map_dir}/session-map.XXXXXX")"
+
+  if [ -f "$map_file" ]; then
+    awk -F '\t' -v key="$session_key" '$1 != key { print $0 }' "$map_file" > "$tmp_file"
+  fi
+
+  printf '%s\t%s\n' "$session_key" "$session_id" >> "$tmp_file"
+  mv "$tmp_file" "$map_file"
+  chmod 600 "$map_file" 2>/dev/null || true
+}
+
+extract_codex_session_id_from_log() {
+  local path="$1"
+
+  if [ ! -f "$path" ]; then
+    return 0
+  fi
+
+  sed -nE 's/.*"type":"session_meta".*"id":"([0-9a-fA-F-]{36})".*/\1/p' "$path" | head -n 1
+}
+
 provider="${AGENT_PROVIDER:-claude}"
 auth_mode="${AGENT_AUTH_MODE:-auto}"
 hivemoot_buzz_role="${HIVEMOOT_BUZZ_ROLE:-}"
@@ -117,6 +176,7 @@ agent_tool_options_json="${AGENT_TOOL_OPTIONS_JSON:-"{}"}"
 timeout_secs="${AGENT_TIMEOUT_SECONDS:-1800}"
 agent_git_name="${AGENT_GIT_NAME:-}"
 agent_git_email="${AGENT_GIT_EMAIL:-}"
+agent_session_key="${AGENT_SESSION_KEY:-}"
 
 # When REPO_DIR/LOG_DIR are set externally (run-multi.sh, run-loop.sh),
 # isolation is handled by the caller. Otherwise, generate a JOB_ID to
@@ -141,6 +201,8 @@ else
   log_dir="${LOG_DIR:-${workspace_root}/runs}"
   job_home=""
 fi
+
+codex_session_map_file="${workspace_root}/codex-session-map.tsv"
 
 case "$auth_mode" in
   auto|api_key|subscription) ;;
@@ -325,6 +387,13 @@ Local repository path: ${repo_dir}
 "
 fi
 
+if [ -n "$agent_session_key" ]; then
+  system_prompt="${system_prompt}
+
+Continuation context key: ${agent_session_key}
+If prior context is available for this key, continue incrementally and avoid repeating unchanged repository discovery."
+fi
+
 # User message: mention context / extra instructions when present,
 # otherwise a default directive.
 default_user_message="Make meaningful contributions to the repository according to your role instructions."
@@ -384,6 +453,8 @@ log_file="${log_dir}/${run_id}.log"
 
 cmd=()
 run_in_repo=0
+codex_active_session_id=""
+codex_used_resume=0
 case "$provider" in
   codex)
     if ! command -v codex >/dev/null 2>&1; then
@@ -442,7 +513,34 @@ case "$provider" in
       esac
     fi
 
-    cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --cd "$repo_dir" --json)
+    codex_resume_supported=0
+    if [ -n "$agent_session_key" ]; then
+      if codex exec resume --help >/dev/null 2>&1; then
+        codex_resume_supported=1
+      else
+        log "Codex resume unavailable; starting fresh session for key=${agent_session_key}"
+      fi
+    fi
+
+    if [ "$codex_resume_supported" -eq 1 ]; then
+      codex_active_session_id="$(load_session_id_for_key "$codex_session_map_file" "$agent_session_key")"
+      if [ -n "$codex_active_session_id" ] && ! is_valid_uuid "$codex_active_session_id"; then
+        log "Codex session resume: ignoring invalid session id for key=${agent_session_key}"
+        codex_active_session_id=""
+      fi
+    fi
+
+    if [ -n "$codex_active_session_id" ]; then
+      codex_used_resume=1
+      log "Codex session resume: key=${agent_session_key} session=${codex_active_session_id}"
+      cmd=(codex exec resume --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json)
+    else
+      if [ -n "$agent_session_key" ] && [ "$codex_resume_supported" -eq 1 ]; then
+        log "Codex session resume: no saved session for key=${agent_session_key}; starting fresh"
+      fi
+      cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json)
+    fi
+
     if [ -n "$agent_model" ]; then
       cmd+=(--model "$agent_model")
     fi
@@ -450,7 +548,12 @@ case "$provider" in
       cmd+=(--config "model_reasoning_effort=\"${codex_reasoning_effort}\"")
       log "Codex reasoning effort: ${codex_reasoning_effort}"
     fi
-    cmd+=("$prompt")
+    if [ "$codex_used_resume" -eq 1 ]; then
+      cmd+=("$codex_active_session_id" "$prompt")
+    else
+      cmd+=("$prompt")
+    fi
+    run_in_repo=1
     ;;
 
   gemini)
@@ -641,6 +744,16 @@ fi
 exit_code="$(cat "$_ec_file")"
 rm -f "$_ec_file"
 set -e
+
+if [ "$provider" = "codex" ] && [ -n "$agent_session_key" ]; then
+  codex_session_from_log="$(extract_codex_session_id_from_log "$log_file")"
+  if is_valid_uuid "$codex_session_from_log"; then
+    save_session_id_for_key "$codex_session_map_file" "$agent_session_key" "$codex_session_from_log"
+    log "Codex session saved: key=${agent_session_key} session=${codex_session_from_log}"
+  else
+    log "Codex session id not found in log for key=${agent_session_key}"
+  fi
+fi
 
 if [ "$exit_code" -eq 124 ]; then
   log "Run timed out after ${timeout_secs}s"
