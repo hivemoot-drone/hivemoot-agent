@@ -62,18 +62,18 @@ assert_fails_with \
 
 echo "PASS: workspace root and agent ID validation checks"
 
-echo "Running CLONE_DEPTH validation checks"
+echo "Running GIT_CLONE_DEPTH validation checks"
 
 assert_fails_with \
-  "Unsupported CLONE_DEPTH: abc. Use 0 (full clone) or a positive integer." \
-  env TARGET_REPO=owner/repo CLONE_DEPTH=abc bash scripts/run-once.sh
+  "Unsupported GIT_CLONE_DEPTH: abc. Use 0 (full clone) or a positive integer." \
+  env TARGET_REPO=owner/repo GIT_CLONE_DEPTH=abc bash scripts/run-once.sh
 
 assert_fails_with \
-  "Unsupported CLONE_DEPTH: -1. Use 0 (full clone) or a positive integer." \
-  env TARGET_REPO=owner/repo CLONE_DEPTH=-1 bash scripts/run-once.sh
+  "Unsupported GIT_CLONE_DEPTH: -1. Use 0 (full clone) or a positive integer." \
+  env TARGET_REPO=owner/repo GIT_CLONE_DEPTH=-1 bash scripts/run-once.sh
 
 assert_fails_with \
-  "Unsupported CLONE_DEPTH: 1.5. Use 0 (full clone) or a positive integer." \
-  env TARGET_REPO=owner/repo CLONE_DEPTH=1.5 bash scripts/run-once.sh
+  "Unsupported GIT_CLONE_DEPTH: 1.5. Use 0 (full clone) or a positive integer." \
+  env TARGET_REPO=owner/repo GIT_CLONE_DEPTH=1.5 bash scripts/run-once.sh
 
-echo "PASS: CLONE_DEPTH validation checks"
+echo "PASS: GIT_CLONE_DEPTH validation checks"

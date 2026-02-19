@@ -254,8 +254,7 @@ auth_mode="${AGENT_AUTH_MODE:-auto}"
 hivemoot_buzz_role="${HIVEMOOT_BUZZ_ROLE:-}"
 target_repo="${TARGET_REPO:-}"
 workspace_root="${WORKSPACE_ROOT:-/workspace}"
-fresh_clone="${FRESH_CLONE:-1}"
-clone_depth="${CLONE_DEPTH:-50}"
+clone_depth="${GIT_CLONE_DEPTH:-50}"
 prompt_file="${AGENT_PROMPT_FILE:-/opt/hivemoot-agent/prompts/default.md}"
 extra_prompt="${AGENT_EXTRA_PROMPT:-}"
 agent_model="${AGENT_MODEL:-}"
@@ -288,7 +287,7 @@ if ! is_positive_integer "$session_resume_max_age_hours"; then
 fi
 
 if ! is_non_negative_integer "$clone_depth"; then
-  echo "Unsupported CLONE_DEPTH: ${clone_depth}. Use 0 (full clone) or a positive integer." >&2
+  echo "Unsupported GIT_CLONE_DEPTH: ${clone_depth}. Use 0 (full clone) or a positive integer." >&2
   exit 1
 fi
 
@@ -577,11 +576,6 @@ case "$1" in
 esac
 EOF
   chmod 700 "$askpass"
-
-  if [ "$fresh_clone" = "1" ] && [ -d "$repo_dir" ]; then
-    log "Removing previous clone: ${repo_dir}"
-    rm -rf "$repo_dir"
-  fi
 
   if [ ! -d "$repo_dir/.git" ]; then
     local clone_args=(--single-branch)

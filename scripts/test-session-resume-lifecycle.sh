@@ -247,7 +247,7 @@ run_run_once() {
     WORKSPACE_ROOT="${case_dir}/workspace" \
     REPO_DIR="${case_dir}/repo" \
     LOG_DIR="${case_dir}/logs" \
-    FRESH_CLONE="0" \
+    GIT_CLONE_DEPTH="50" \
     AGENT_SESSION_KEY="mention-thread:test-thread" \
     SESSION_RESUME="1" \
     SESSION_RESUME_MAX_IDLE_HOURS="12" \
