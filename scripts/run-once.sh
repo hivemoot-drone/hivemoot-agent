@@ -163,6 +163,26 @@ extract_codex_session_id_from_log() {
   sed -nE 's/.*"type":"session_meta".*"id":"([0-9a-fA-F-]{36})".*/\1/p' "$path" | head -n 1
 }
 
+build_scoped_session_key() {
+  local base_key="$1"
+  local repo_full_name="$2"
+  local provider_name="$3"
+  local model_name="$4"
+  local tool_options_json="$5"
+  local options_hash=""
+  local resolved_model=""
+
+  if [ -z "$base_key" ]; then
+    return 0
+  fi
+
+  options_hash="$(printf '%s' "$tool_options_json" | cksum | awk '{print $1}')"
+  resolved_model="${model_name:-default}"
+
+  printf 'repo=%s|provider=%s|model=%s|toolopts=%s|key=%s' \
+    "$repo_full_name" "$provider_name" "$resolved_model" "$options_hash" "$base_key"
+}
+
 provider="${AGENT_PROVIDER:-claude}"
 auth_mode="${AGENT_AUTH_MODE:-auto}"
 hivemoot_buzz_role="${HIVEMOOT_BUZZ_ROLE:-}"
@@ -203,6 +223,7 @@ else
 fi
 
 codex_session_map_file="${workspace_root}/codex-session-map.tsv"
+codex_resume_key="$(build_scoped_session_key "$agent_session_key" "$target_repo" "$provider" "$agent_model" "$agent_tool_options_json")"
 
 case "$auth_mode" in
   auto|api_key|subscription) ;;
@@ -514,7 +535,7 @@ case "$provider" in
     fi
 
     codex_resume_supported=0
-    if [ -n "$agent_session_key" ]; then
+    if [ -n "$codex_resume_key" ]; then
       if codex exec resume --help >/dev/null 2>&1; then
         codex_resume_supported=1
       else
@@ -523,7 +544,7 @@ case "$provider" in
     fi
 
     if [ "$codex_resume_supported" -eq 1 ]; then
-      codex_active_session_id="$(load_session_id_for_key "$codex_session_map_file" "$agent_session_key")"
+      codex_active_session_id="$(load_session_id_for_key "$codex_session_map_file" "$codex_resume_key")"
       if [ -n "$codex_active_session_id" ] && ! is_valid_uuid "$codex_active_session_id"; then
         log "Codex session resume: ignoring invalid session id for key=${agent_session_key}"
         codex_active_session_id=""
@@ -535,7 +556,7 @@ case "$provider" in
       log "Codex session resume: key=${agent_session_key} session=${codex_active_session_id}"
       cmd=(codex exec resume --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json)
     else
-      if [ -n "$agent_session_key" ] && [ "$codex_resume_supported" -eq 1 ]; then
+      if [ -n "$codex_resume_key" ] && [ "$codex_resume_supported" -eq 1 ]; then
         log "Codex session resume: no saved session for key=${agent_session_key}; starting fresh"
       fi
       cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json)
@@ -745,10 +766,10 @@ exit_code="$(cat "$_ec_file")"
 rm -f "$_ec_file"
 set -e
 
-if [ "$provider" = "codex" ] && [ -n "$agent_session_key" ]; then
+if [ "$provider" = "codex" ] && [ -n "$codex_resume_key" ]; then
   codex_session_from_log="$(extract_codex_session_id_from_log "$log_file")"
   if is_valid_uuid "$codex_session_from_log"; then
-    save_session_id_for_key "$codex_session_map_file" "$agent_session_key" "$codex_session_from_log"
+    save_session_id_for_key "$codex_session_map_file" "$codex_resume_key" "$codex_session_from_log"
     log "Codex session saved: key=${agent_session_key} session=${codex_session_from_log}"
   else
     log "Codex session id not found in log for key=${agent_session_key}"
