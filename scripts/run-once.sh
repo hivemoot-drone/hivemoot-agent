@@ -238,9 +238,18 @@ extra_prompt="${AGENT_EXTRA_PROMPT:-}"
 agent_model="${AGENT_MODEL:-}"
 agent_tool_options_json="${AGENT_TOOL_OPTIONS_JSON:-"{}"}"
 timeout_secs="${AGENT_TIMEOUT_SECONDS:-1800}"
+session_resume_enabled="${SESSION_RESUME_ENABLED:-1}"
 agent_git_name="${AGENT_GIT_NAME:-}"
 agent_git_email="${AGENT_GIT_EMAIL:-}"
 agent_session_key="${AGENT_SESSION_KEY:-}"
+
+case "$session_resume_enabled" in
+  0|1) ;;
+  *)
+    echo "Unsupported SESSION_RESUME_ENABLED: ${session_resume_enabled}. Use 0|1." >&2
+    exit 1
+    ;;
+esac
 
 # When REPO_DIR/LOG_DIR are set externally (run-multi.sh, run-loop.sh),
 # isolation is handled by the caller. Otherwise, generate a JOB_ID to
@@ -592,12 +601,14 @@ case "$provider" in
     codex_fresh_cmd=(codex exec "${codex_cmd_common[@]}" "$prompt")
 
     codex_resume_supported=0
-    if [ -n "$codex_resume_key" ]; then
+    if [ "$session_resume_enabled" = "1" ] && [ -n "$codex_resume_key" ]; then
       if codex exec resume --help >/dev/null 2>&1; then
         codex_resume_supported=1
       else
         log "Codex resume unavailable; starting fresh session for key=${agent_session_key}"
       fi
+    elif [ "$session_resume_enabled" = "0" ] && [ -n "$codex_resume_key" ]; then
+      log "Codex session resume disabled (SESSION_RESUME_ENABLED=0); starting fresh session for key=${agent_session_key}"
     fi
 
     codex_resume_now_epoch="$(date +%s)"
