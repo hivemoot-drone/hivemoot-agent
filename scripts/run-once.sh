@@ -811,13 +811,24 @@ You are resuming a prior session for this mention thread. Some data in your cont
     log "Claude auth mode resolved to: ${claude_auth_mode}"
 
     # Deny rules are enforced even with --dangerously-skip-permissions;
-    # they prevent the most common prompt-injection exfiltration patterns.
+    # they block naive single-command exfiltration patterns from prompt injection.
     # See issue #94 for analysis and rationale.
+    # Note: Bash(*) access means sufficiently creative shell invocations
+    # (e.g. bash -c 'env', python3 -c 'import os; print(os.environ)') cannot
+    # be blocked by deny lists alone — container isolation is the primary defense.
     claude_disallowed_tools=(
       "Bash(env)"
       "Bash(env *)"
       "Bash(printenv)"
       "Bash(printenv *)"
+      "Bash(set)"
+      "Bash(set *)"
+      "Bash(export)"
+      "Bash(export *)"
+      "Bash(declare)"
+      "Bash(declare *)"
+      "Bash(cat /run/secrets/*)"
+      "Bash(* /run/secrets/*)"
       "Read(/run/secrets/*)"
     )
 
