@@ -810,7 +810,19 @@ You are resuming a prior session for this mention thread. Some data in your cont
     fi
     log "Claude auth mode resolved to: ${claude_auth_mode}"
 
+    # Deny rules are enforced even with --dangerously-skip-permissions;
+    # they prevent the most common prompt-injection exfiltration patterns.
+    # See issue #94 for analysis and rationale.
+    claude_disallowed_tools=(
+      "Bash(env)"
+      "Bash(env *)"
+      "Bash(printenv)"
+      "Bash(printenv *)"
+      "Read(/run/secrets/*)"
+    )
+
     claude_fresh_cmd=(claude -p --verbose --output-format stream-json --dangerously-skip-permissions)
+    claude_fresh_cmd+=(--disallowedTools "${claude_disallowed_tools[@]}")
     claude_fresh_cmd+=(--append-system-prompt "$system_prompt")
     if [ -n "$agent_model" ]; then
       claude_fresh_cmd+=(--model "$agent_model")
@@ -860,6 +872,7 @@ You are resuming a prior session for this mention thread. Some data in your cont
 
 You are resuming a prior session for this mention thread. Some data in your context may be stale — refresh the relevant information before acting."
       cmd=(claude --resume "$claude_active_session_id" -p --verbose --output-format stream-json --dangerously-skip-permissions)
+      cmd+=(--disallowedTools "${claude_disallowed_tools[@]}")
       cmd+=(--append-system-prompt "$system_prompt")
       if [ -n "$agent_model" ]; then
         cmd+=(--model "$agent_model")
