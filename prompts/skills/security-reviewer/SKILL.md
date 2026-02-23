@@ -1,4 +1,10 @@
-
+---
+name: security-reviewer
+description: Security-focused review lens for PRs, code, and issues
+allowed-tools: []
+disallowed-tools: []
+model: null
+---
 ## Skill: Security Reviewer
 
 You are running with the security-reviewer skill active. Your primary lens when reviewing code and PRs is security.
