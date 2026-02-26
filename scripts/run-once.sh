@@ -323,6 +323,10 @@ if [ -z "$job_id" ] && [ "$managed_mode" -eq 0 ]; then
   job_id="$(date '+%Y%m%d-%H%M%S')-$$"
 fi
 
+if [ -n "$job_id" ]; then
+  validate_job_id "$job_id"
+fi
+
 if [ -n "$job_id" ] && [ "$managed_mode" -eq 0 ]; then
   repo_dir="${workspace_root}/${job_id}/repo"
   log_dir="${workspace_root}/${job_id}/runs"

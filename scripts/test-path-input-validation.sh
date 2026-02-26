@@ -77,3 +77,27 @@ assert_fails_with \
   env TARGET_REPO=owner/repo GIT_CLONE_DEPTH=1.5 bash scripts/run-once.sh
 
 echo "PASS: GIT_CLONE_DEPTH validation checks"
+
+echo "Running JOB_ID validation checks"
+
+assert_fails_with \
+  "Invalid job id: ../etc" \
+  env TARGET_REPO=owner/repo JOB_ID=../etc bash scripts/run-once.sh
+
+assert_fails_with \
+  "Invalid job id: .." \
+  env TARGET_REPO=owner/repo JOB_ID=.. bash scripts/run-once.sh
+
+assert_fails_with \
+  "Invalid job id: ." \
+  env TARGET_REPO=owner/repo JOB_ID=. bash scripts/run-once.sh
+
+assert_fails_with \
+  "Invalid job id: foo/bar" \
+  env TARGET_REPO=owner/repo JOB_ID=foo/bar bash scripts/run-once.sh
+
+assert_fails_with \
+  "Invalid job id: foo\\bar" \
+  env TARGET_REPO=owner/repo JOB_ID=foo\\bar bash scripts/run-once.sh
+
+echo "PASS: JOB_ID validation checks"
