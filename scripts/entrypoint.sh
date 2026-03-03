@@ -41,7 +41,9 @@ case "$mode" in
     exec /opt/hivemoot-agent/scripts/run-multi.sh
     ;;
   loop)
-    log "Running loop mode"
+    log "WARNING: RUN_MODE=loop (Phase 1 in-container supervisor) is deprecated."
+    log "         Use the host controller instead: bash scripts/controller.sh"
+    log "         See README Host Controller section for migration details."
     exec /opt/hivemoot-agent/scripts/run-loop.sh
     ;;
   *)

@@ -123,7 +123,7 @@ load_secret_from_file() {
 }
 
 # Load all provider API secrets from their corresponding *_FILE env vars.
-# Called at startup in every entrypoint (entrypoint.sh, run-loop.sh,
+# Called at startup in every entrypoint (entrypoint.sh, run-loop.sh [deprecated],
 # run-multi.sh, run-once.sh) so new provider keys only need adding here.
 load_provider_secrets() {
   local secret_var
