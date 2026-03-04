@@ -82,14 +82,15 @@ EOF
   result="$(extract_claude_token_usage_from_log "${TEST_TMP}/run.ndjson")"
   [ -n "$result" ] || fail "expected non-empty result"
 
-  local bd_input bd_cache_read bd_cost
+  local bd_input bd_cache_read bd_cost_ok
   bd_input="$(printf '%s' "$result" | jq '.model_breakdown["claude-sonnet-4-6"].input_tokens')"
   bd_cache_read="$(printf '%s' "$result" | jq '.model_breakdown["claude-sonnet-4-6"].cache_read_input_tokens')"
-  bd_cost="$(printf '%s' "$result" | jq '.model_breakdown["claude-sonnet-4-6"].cost_usd')"
+  # Use jq for numeric comparison to avoid float representation differences (1 vs 1.0 vs 1.00).
+  bd_cost_ok="$(printf '%s' "$result" | jq '.model_breakdown["claude-sonnet-4-6"].cost_usd == 1.0')"
 
-  [ "$bd_input" = "80" ]     || fail "model_breakdown input_tokens: expected 80, got ${bd_input}"
+  [ "$bd_input" = "80" ]       || fail "model_breakdown input_tokens: expected 80, got ${bd_input}"
   [ "$bd_cache_read" = "200" ] || fail "model_breakdown cache_read: expected 200, got ${bd_cache_read}"
-  [ "$bd_cost" = "1" ]       || fail "model_breakdown cost_usd: expected 1, got ${bd_cost}"
+  [ "$bd_cost_ok" = "true" ]   || fail "model_breakdown cost_usd: expected 1.0"
 
   pass "claude: model_breakdown includes cache and cost fields per model"
 }
