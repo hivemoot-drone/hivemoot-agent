@@ -105,6 +105,8 @@ load_provider_secrets
 
 # shellcheck source=scripts/opencode-helpers.sh
 . "${SCRIPT_DIR}/opencode-helpers.sh"
+# shellcheck source=scripts/token-extractor.sh
+. "${SCRIPT_DIR}/token-extractor.sh"
 
 is_valid_uuid() {
   local value="$1"
@@ -254,69 +256,6 @@ should_resume_session() {
 
   [ "$idle_age" -le $((max_idle_hours * 3600)) ] \
     && [ "$total_age" -le $((max_age_hours * 3600)) ]
-}
-
-# Extract token usage from a Claude NDJSON stream log.
-# Finds the final "type":"result" event and extracts usage/modelUsage/total_cost_usd.
-# Outputs a compact JSON object or empty string on failure.
-extract_claude_token_usage_from_log() {
-  local path="$1"
-
-  if [ ! -f "$path" ] || ! command -v jq >/dev/null 2>&1; then
-    return 0
-  fi
-
-  jq -Rrs '
-    [split("\n")[] | select(length > 0) | try fromjson catch null | select(. != null)]
-    | map(select(.type == "result")) | last
-    | if . == null then empty
-      else {
-        input_tokens:  (.usage.input_tokens // null),
-        output_tokens: (.usage.output_tokens // null),
-        total_cost_usd: (.total_cost_usd // null),
-        model_breakdown: (
-          if .modelUsage then
-            [ .modelUsage | to_entries[] | {
-                key: .key,
-                value: {
-                  input_tokens:  .value.input_tokens,
-                  output_tokens: .value.output_tokens
-                }
-              }
-            ] | from_entries
-          else null end
-        )
-      }
-      | with_entries(select(.value != null))
-      end
-  ' "$path" 2>/dev/null || true
-}
-
-# Extract token usage from a Codex NDJSON stream log.
-# Finds the "type":"turn.completed" (or "type":"response") event.
-# Outputs a compact JSON object or empty string on failure.
-extract_codex_token_usage_from_log() {
-  local path="$1"
-
-  if [ ! -f "$path" ] || ! command -v jq >/dev/null 2>&1; then
-    return 0
-  fi
-
-  jq -Rrs '
-    [split("\n")[] | select(length > 0) | try fromjson catch null | select(. != null)]
-    | map(select(.type == "turn.completed" or .type == "response")) | last
-    | if . == null then empty
-      else
-        (.usage // .response.usage // null)
-        | if . == null then empty
-          else {
-            input_tokens:  (.input_tokens // null),
-            output_tokens: (.output_tokens // null)
-          }
-          | with_entries(select(.value != null))
-          end
-      end
-  ' "$path" 2>/dev/null || true
 }
 
 provider="${AGENT_PROVIDER:-claude}"
