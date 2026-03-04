@@ -256,8 +256,73 @@ should_resume_session() {
     && [ "$total_age" -le $((max_age_hours * 3600)) ]
 }
 
+# Extract token usage from a Claude NDJSON stream log.
+# Finds the final "type":"result" event and extracts usage/modelUsage/total_cost_usd.
+# Outputs a compact JSON object or empty string on failure.
+extract_claude_token_usage_from_log() {
+  local path="$1"
+
+  if [ ! -f "$path" ] || ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+
+  jq -Rrs '
+    [split("\n")[] | select(length > 0) | try fromjson catch null | select(. != null)]
+    | map(select(.type == "result")) | last
+    | if . == null then empty
+      else {
+        input_tokens:  (.usage.input_tokens // null),
+        output_tokens: (.usage.output_tokens // null),
+        total_cost_usd: (.total_cost_usd // null),
+        model_breakdown: (
+          if .modelUsage then
+            [ .modelUsage | to_entries[] | {
+                key: .key,
+                value: {
+                  input_tokens:  .value.input_tokens,
+                  output_tokens: .value.output_tokens
+                }
+              }
+            ] | from_entries
+          else null end
+        )
+      }
+      | with_entries(select(.value != null))
+      end
+  ' "$path" 2>/dev/null || true
+}
+
+# Extract token usage from a Codex NDJSON stream log.
+# Finds the "type":"turn.completed" (or "type":"response") event.
+# Outputs a compact JSON object or empty string on failure.
+extract_codex_token_usage_from_log() {
+  local path="$1"
+
+  if [ ! -f "$path" ] || ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+
+  jq -Rrs '
+    [split("\n")[] | select(length > 0) | try fromjson catch null | select(. != null)]
+    | map(select(.type == "turn.completed" or .type == "response")) | last
+    | if . == null then empty
+      else
+        (.usage // .response.usage // null)
+        | if . == null then empty
+          else {
+            input_tokens:  (.input_tokens // null),
+            output_tokens: (.output_tokens // null)
+          }
+          | with_entries(select(.value != null))
+          end
+      end
+  ' "$path" 2>/dev/null || true
+}
+
 provider="${AGENT_PROVIDER:-claude}"
 auth_mode="${AGENT_AUTH_MODE:-auto}"
+# Default to "manual" for standalone invocations; controller injects the real value.
+RUN_TRIGGER_TYPE="${RUN_TRIGGER_TYPE:-manual}"
 hivemoot_buzz_role="${HIVEMOOT_BUZZ_ROLE:-}"
 target_repo="${TARGET_REPO:-}"
 workspace_root="${WORKSPACE_ROOT:-/workspace}"
@@ -1182,10 +1247,21 @@ if [ -n "${HEALTH_REPORT_URL:-}" ]; then
       || true)"
   fi
 
+  # Extract token usage from the per-attempt log (best-effort; empty string if unavailable).
+  _token_usage_json=""
+  if [ -n "${last_command_log:-}" ] && [ -f "${last_command_log}" ]; then
+    case "$provider" in
+      claude) _token_usage_json="$(extract_claude_token_usage_from_log "$last_command_log")" || true ;;
+      codex)  _token_usage_json="$(extract_codex_token_usage_from_log "$last_command_log")" || true ;;
+      *)      _token_usage_json="" ;;
+    esac
+  fi
+
   report_health_to_backend \
     "$agent_name" "$target_repo" "${HIVEMOOT_AGENT_TOKEN:-}" \
     "$run_id" "$_run_outcome" "$run_duration_secs" "${_consecutive_failures:-0}" \
-    "$exit_code" "${_run_error:-}" "$_next_run_at" || true
+    "$exit_code" "${_run_error:-}" "$_next_run_at" \
+    "${RUN_TRIGGER_TYPE:-manual}" "$_token_usage_json" || true
 fi
 
 if [ -n "${last_command_log:-}" ] && [ "$last_command_log" != "$log_file" ] && [ -f "$last_command_log" ]; then

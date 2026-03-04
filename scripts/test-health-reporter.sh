@@ -999,6 +999,111 @@ MOCK
   # Heartbeat must cap --max-time at 3, not inherit caller's 30.
   [ "$max_time_used" = "3" ] || fail "expected --max-time 3, got ${max_time_used} (heartbeat timeout not bounded)"
   pass "heartbeat uses bounded timeout (max-time=3) and no retries against a failing backend"
+# ── trigger field tests ───────────────────────────────────────────
+
+test_payload_includes_trigger() {
+  source_reporter
+  local payload
+  payload="$(_build_health_payload "a" "owner/repo" "run-1" "success" "10" "0" "" "" "" "scheduled")"
+  local trigger_val
+  trigger_val="$(printf '%s' "$payload" | jq -r '.trigger')"
+  [ "$trigger_val" = "scheduled" ] || fail "expected trigger=scheduled, got ${trigger_val}"
+  pass "payload includes trigger when provided"
+}
+
+test_payload_omits_trigger_when_empty() {
+  source_reporter
+  local payload
+  payload="$(build_test_payload)"
+  local has_trigger
+  has_trigger="$(printf '%s' "$payload" | jq 'has("trigger")')"
+  [ "$has_trigger" = "false" ] || fail "expected trigger absent when not provided"
+  pass "payload omits trigger when empty"
+}
+
+test_validates_valid_trigger_values() {
+  source_reporter
+  local payload_base
+  payload_base="$(build_test_payload)"
+  local trigger
+  for trigger in scheduled mention manual task; do
+    local payload
+    payload="$(printf '%s' "$payload_base" | jq --arg t "$trigger" '. + {trigger: $t}')"
+    if ! _validate_health_payload "$payload" 2>/dev/null; then
+      fail "validation should accept trigger=${trigger}"
+    fi
+  done
+  pass "accepts all valid trigger values"
+}
+
+test_validates_invalid_trigger_rejected() {
+  source_reporter
+  local payload
+  payload="$(build_test_payload)"
+  payload="$(printf '%s' "$payload" | jq '. + {trigger: "cron"}')"
+  if _validate_health_payload "$payload" 2>/dev/null; then
+    fail "validation should reject unknown trigger value"
+  fi
+  pass "rejects unknown trigger value"
+}
+
+# ── token_usage field tests ───────────────────────────────────────
+
+test_payload_includes_token_usage() {
+  source_reporter
+  local token_json='{"input_tokens":100,"output_tokens":50}'
+  local payload
+  payload="$(_build_health_payload "a" "owner/repo" "run-1" "success" "10" "0" "" "" "" "" "$token_json")"
+  local has_tu
+  has_tu="$(printf '%s' "$payload" | jq 'has("token_usage")')"
+  [ "$has_tu" = "true" ] || fail "expected token_usage to be present"
+  local in_tokens
+  in_tokens="$(printf '%s' "$payload" | jq '.token_usage.input_tokens')"
+  [ "$in_tokens" = "100" ] || fail "expected input_tokens=100, got ${in_tokens}"
+  pass "payload includes token_usage when provided"
+}
+
+test_payload_omits_token_usage_when_empty() {
+  source_reporter
+  local payload
+  payload="$(build_test_payload)"
+  local has_tu
+  has_tu="$(printf '%s' "$payload" | jq 'has("token_usage")')"
+  [ "$has_tu" = "false" ] || fail "expected token_usage absent when not provided"
+  pass "payload omits token_usage when empty"
+}
+
+test_validates_token_usage_object_passes() {
+  source_reporter
+  local payload
+  payload="$(build_test_payload)"
+  payload="$(printf '%s' "$payload" | jq '. + {token_usage: {input_tokens: 10, output_tokens: 5}}')"
+  if ! _validate_health_payload "$payload" 2>/dev/null; then
+    fail "valid token_usage object should pass validation"
+  fi
+  pass "token_usage object passes validation"
+}
+
+test_validates_token_usage_string_rejected() {
+  source_reporter
+  local payload
+  payload="$(build_test_payload)"
+  payload="$(printf '%s' "$payload" | jq '. + {token_usage: "not-an-object"}')"
+  if _validate_health_payload "$payload" 2>/dev/null; then
+    fail "validation should reject token_usage as string"
+  fi
+  pass "rejects token_usage as string"
+}
+
+test_validates_token_usage_null_passes() {
+  source_reporter
+  local payload
+  payload="$(build_test_payload)"
+  payload="$(printf '%s' "$payload" | jq '. + {token_usage: null}')"
+  if ! _validate_health_payload "$payload" 2>/dev/null; then
+    fail "null token_usage should pass validation"
+  fi
+  pass "null token_usage passes validation"
 }
 
 # ── run all tests ────────────────────────────────────────────────
@@ -1024,6 +1129,10 @@ run_test test_payload_optional_error
 run_test test_payload_omits_empty_optionals
 run_test test_payload_optional_next_run_at
 run_test test_payload_omits_empty_next_run_at
+run_test test_payload_includes_trigger
+run_test test_payload_omits_trigger_when_empty
+run_test test_payload_includes_token_usage
+run_test test_payload_omits_token_usage_when_empty
 echo ""
 
 echo "  Validation — required fields:"
@@ -1040,6 +1149,14 @@ echo "  Validation — enums:"
 run_test test_validates_invalid_outcome_enum
 run_test test_validates_valid_outcome_values
 run_test test_validates_skipped_not_valid_outcome
+run_test test_validates_valid_trigger_values
+run_test test_validates_invalid_trigger_rejected
+echo ""
+
+echo "  Validation — token_usage:"
+run_test test_validates_token_usage_object_passes
+run_test test_validates_token_usage_string_rejected
+run_test test_validates_token_usage_null_passes
 echo ""
 
 echo "  Validation — numerics:"
