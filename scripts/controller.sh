@@ -13,6 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/lib.sh"
 # shellcheck source=scripts/health-reporter.sh
 . "${SCRIPT_DIR}/health-reporter.sh"
+# shellcheck source=scripts/lib-slots.sh
+. "${SCRIPT_DIR}/lib-slots.sh"
 
 bash_major="${BASH_VERSINFO[0]:-0}"
 print_bash_upgrade_hint() {
