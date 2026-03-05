@@ -47,6 +47,10 @@ source_lib() {
 source_reporter() {
   unset HIVEMOOT_HEALTH_REPORTER_LOADED 2>/dev/null || true
   unset HIVEMOOT_LIB_LOADED 2>/dev/null || true
+  # Clear bash's cached curl path so mock PATH overrides take effect reliably.
+  # Without this, bash reuses a cached system curl even after PATH is prepended
+  # with a mock directory. See issue #242.
+  hash -d curl 2>/dev/null || true
   # shellcheck source=scripts/lib.sh
   . "${SCRIPT_DIR}/lib.sh"
   # shellcheck source=scripts/health-reporter.sh
