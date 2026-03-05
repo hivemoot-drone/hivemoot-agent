@@ -173,45 +173,6 @@ Each slot requires both `AGENT_ID_XX` and `AGENT_GITHUB_TOKEN_XX` (or `_FILE`). 
 docker compose run --rm -v ./secrets:/run/secrets:ro hivemoot-agent
 ```
 
-**Loop** — run agents periodically on a schedule:
-
-```bash
-RUN_MODE=loop docker compose up hivemoot-agent
-```
-
-> Loop and mention modes use `docker compose up`, which doesn't support `-v`.
-> Add the secrets mount to `docker-compose.override.yml` instead:
->
-> ```yaml
-> services:
->   hivemoot-agent:
->     volumes:
->       - ./secrets:/run/secrets:ro
-> ```
-
-Tune loop behavior in `.env`:
-- `PERIODIC_INTERVAL_SECS` — interval between runs (default: 3600s)
-- `PERIODIC_JITTER_SECS` — random variance (default: 300s)
-- `MAX_CONSECUTIVE_FAILURES` — exit after N failures (default: 5)
-- `PERIODIC_AGENT_FAILURE_BACKOFF_BASE_SECS` — initial cooldown for a failing agent (default: 300s)
-- `PERIODIC_AGENT_FAILURE_BACKOFF_MAX_SECS` — max cooldown cap for repeated failures (default: 3600s)
-- `PERIODIC_AGENT_FAILURE_BACKOFF_JITTER_PCT` — random jitter applied to cooldowns (default: 15)
-
-**Loop + mention watching** — periodic runs plus respond to @mentions:
-
-```bash
-RUN_MODE=loop WATCH_MENTIONS=1 docker compose up hivemoot-agent
-```
-
-Requires `TARGET_REPO` and user tokens (not installation tokens). Additional settings:
-- `WATCH_POLL_INTERVAL` — seconds between mention polls (default: 300)
-- `SESSION_RESUME` — set `0` to disable session resume and always start fresh runs (default: `1`)
-- `SESSION_RESUME_MAX_IDLE_HOURS` — reset stale sessions after this idle window (default: `12`)
-- `SESSION_RESUME_MAX_AGE_HOURS` — reset sessions older than this total age window (default: `24`)
-- `GIT_CLONE_DEPTH` — shallow clone depth (default `50`, `0` for full clone). Existing checkouts are reused automatically via fetch + reset
-
-Both `codex` and `claude` providers support mention-triggered session resume. Each provider keeps one session per GitHub notification thread and resumes follow-up mentions with the saved session UUID. For Codex the UUID comes from `--json` output (`thread.started.thread_id`) and is resumed via `codex exec resume <SESSION_ID>`. For Claude the UUID is extracted from the stream-JSON `init` event (`session_id`) and resumed via `claude --resume <SESSION_ID>`. Session maps are persisted under each agent workspace (for example `/workspace/repo/agents/<agent-id>/sessions/<provider>/tool-session-map.tsv`), scoped by runtime settings (repo/provider/model/tool options + mention key) to avoid cross-config reuse. Periodic runs (no mention session key) always start fresh. Resume is strict: sessions reset when idle/age limits are exceeded (`SESSION_RESUME_MAX_IDLE_HOURS` / `SESSION_RESUME_MAX_AGE_HOURS`), and any failed resume is retried once as a fresh session.
-
 **Task mode** — claim one delegated task, execute it through the same `run-once`
 runtime path, report progress/result, then exit:
 

@@ -311,7 +311,7 @@ fi
 
 validate_workspace_root "$workspace_root"
 
-# When REPO_DIR/LOG_DIR are set externally (run-multi.sh, run-loop.sh),
+# When REPO_DIR/LOG_DIR are set externally (run-multi.sh),
 # isolation is handled by the caller. Otherwise, generate a JOB_ID to
 # namespace workspace/HOME/logs so every standalone run is isolated.
 managed_mode=0
@@ -395,7 +395,7 @@ mkdir -p "$workspace_root" "$log_dir"
 
 # Create an isolated HOME for this job and seed only auth credentials
 # (not conversation caches or session state). Skipped in managed mode
-# where the caller (run-multi.sh / run-loop.sh) handles HOME isolation.
+# where the caller (run-multi.sh) handles HOME isolation.
 if [ -n "$job_home" ]; then
   mkdir -p "$job_home/.config" "$job_home/.cache" "$job_home/.local/share"
   chmod 700 "$job_home" "$job_home/.config" "$job_home/.cache" \
@@ -1151,7 +1151,7 @@ if [ -n "${HEALTH_REPORT_URL:-}" ]; then
   fi
 
   # Compute next_run_at when running on a periodic schedule.
-  # PERIODIC_INTERVAL_SECS is exported by run-loop.sh; unset for standalone/mention runs.
+  # PERIODIC_INTERVAL_SECS is exported by controller.sh; unset for standalone/mention runs.
   _next_run_at=""
   if [ -n "${PERIODIC_INTERVAL_SECS:-}" ] && printf '%s' "$PERIODIC_INTERVAL_SECS" | grep -Eq '^[1-9][0-9]*$'; then
     _next_run_at="$(date -u -d "+${PERIODIC_INTERVAL_SECS} seconds" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \

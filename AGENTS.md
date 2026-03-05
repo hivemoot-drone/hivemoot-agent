@@ -27,7 +27,6 @@ tool calls.
 
 - Entrypoint: `scripts/entrypoint.sh`
 - One-shot orchestration: `scripts/run-multi.sh`
-- Loop orchestration: `scripts/run-loop.sh`
 - Per-agent execution unit: `scripts/run-once.sh`
 - Shared shell helpers: `scripts/lib.sh`
 - Host controller (per-job worker containers): `scripts/controller.sh`
@@ -35,7 +34,7 @@ tool calls.
 High-level flow:
 
 1. `entrypoint.sh` loads secrets and selects `RUN_MODE`.
-2. `run-multi.sh` or `run-loop.sh` validates config, initializes per-agent state,
+2. `run-multi.sh` validates config, initializes per-agent state,
    and launches `run-once.sh` per agent.
 3. `run-once.sh` prepares isolated workspace and home paths, then runs provider
    CLI tasks for issue/PR/discussion work.

@@ -154,8 +154,8 @@ resolve_secret_value() {
 }
 
 # Load all provider API secrets from their corresponding *_FILE env vars.
-# Called at startup in every entrypoint (entrypoint.sh, run-loop.sh,
-# run-multi.sh, run-once.sh) so new provider keys only need adding here.
+# Called at startup in every entrypoint (entrypoint.sh, run-multi.sh,
+# run-once.sh) so new provider keys only need adding here.
 load_provider_secrets() {
   local secret_var
   for secret_var in \

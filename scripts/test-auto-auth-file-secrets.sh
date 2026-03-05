@@ -98,6 +98,6 @@ assert_fails_with \
     TARGET_REPO=owner/repo \
     AGENT_ID_01=worker \
     AGENT_GITHUB_TOKEN_01=dummy \
-    bash scripts/run-loop.sh
+    bash scripts/run-multi.sh
 
 echo "PASS: auto-auth file-secret checks"

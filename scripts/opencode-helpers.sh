@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Shared OpenCode helper functions sourced by run-once.sh, run-loop.sh,
-# and run-multi.sh. Callers must define a log() function before sourcing.
+# Shared OpenCode helper functions sourced by run-once.sh and run-multi.sh.
+# Callers must define a log() function before sourcing.
 
 # Auto-generate OpenCode config and auth.json if missing. Config holds
 # permissions and model selection; auth.json holds the actual API key

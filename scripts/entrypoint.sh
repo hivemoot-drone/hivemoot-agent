@@ -40,16 +40,12 @@ case "$mode" in
     log "Running multi-agent execution"
     exec /opt/hivemoot-agent/scripts/run-multi.sh
     ;;
-  loop)
-    log "Running loop mode"
-    exec /opt/hivemoot-agent/scripts/run-loop.sh
-    ;;
   task)
     log "Running task mode"
     exec /opt/hivemoot-agent/scripts/run-task.sh
     ;;
   *)
-    echo "Invalid RUN_MODE: ${mode}. Expected: once|loop|task" >&2
+    echo "Invalid RUN_MODE: ${mode}. Expected: once|task" >&2
     exit 1
     ;;
 esac

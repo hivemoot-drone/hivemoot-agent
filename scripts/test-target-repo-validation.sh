@@ -47,12 +47,4 @@ assert_fails_with \
   "Invalid TARGET_REPO: not-a-repo. Expected owner/repo." \
   env TARGET_REPO=not-a-repo bash scripts/run-multi.sh
 
-assert_fails_with \
-  "TARGET_REPO is required. Set it as owner/repo." \
-  env -u TARGET_REPO -u WATCH_MENTIONS bash scripts/run-loop.sh
-
-assert_fails_with \
-  "Invalid TARGET_REPO: not-a-repo. Expected owner/repo." \
-  env -u WATCH_MENTIONS TARGET_REPO=not-a-repo bash scripts/run-loop.sh
-
 echo "PASS: TARGET_REPO validation checks"
