@@ -172,24 +172,6 @@ load_provider_secrets() {
   done
 }
 
-repo_name_is_valid() {
-  local repo_name="$1"
-  local repo_segment=""
-
-  if ! printf '%s' "$repo_name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+$'; then
-    return 1
-  fi
-
-  repo_segment="${repo_name#*/}"
-  case "$repo_segment" in
-    .|..)
-      return 1
-      ;;
-  esac
-
-  return 0
-}
-
 strip_frontmatter() {
   local file="$1"
   awk 'BEGIN{fm=0} /^---$/ && fm<2 {fm++; next} fm>=2||fm==0{print}' "$file"
@@ -235,32 +217,10 @@ ${body}
   printf '%s' "$result"
 }
 
-validate_target_repo() {
-  local target_repo="$1"
-
-  if [ -z "$target_repo" ]; then
-    echo "TARGET_REPO is required. Set it as owner/repo." >&2
-    exit 1
-  fi
-
-  if ! repo_name_is_valid "$target_repo"; then
-    echo "Invalid TARGET_REPO: ${target_repo}. Expected owner/repo." >&2
-    exit 1
-  fi
-}
-
-validate_workspace_root() {
-  local workspace_root="$1"
-
-  case "$workspace_root" in
-    /*) ;;
-    *)
-      echo "WORKSPACE_ROOT must be an absolute path" >&2
-      exit 1
-      ;;
-  esac
-}
-
+# Validation functions extracted to lib-validate.sh.
+# This comment preserves extraction history for grep searches.
+# Original location: lines 144–182 in lib.sh (pre-extraction).
+# Functions moved: validate_target_repo, validate_workspace_root, validate_agent_id
 resolve_companion_base_prompt() {
   local prompt_file="$1"
   local sibling_base_file=""
@@ -288,17 +248,6 @@ prompt_requires_companion_base() {
   esac
 
   return 1
-}
-
-validate_agent_id() {
-  local agent_id="$1"
-
-  case "$agent_id" in
-    ''|*[!a-zA-Z0-9_-]*)
-      echo "Invalid AGENT_ID: ${agent_id}" >&2
-      exit 1
-      ;;
-  esac
 }
 
 # Deterministic offset within an interval for staggered scheduling.
