@@ -62,17 +62,24 @@ printf '%s\n' "AGENT_TIMEOUT_SECONDS=${AGENT_TIMEOUT_SECONDS:-}" >> "${MOCK_ENV_
 printf '%s\n' "SESSION_RESUME=${SESSION_RESUME:-}" >> "${MOCK_ENV_SNAPSHOT:?}"
 printf '%s\n' "AGENT_GITHUB_TOKEN=${AGENT_GITHUB_TOKEN:-}" >> "${MOCK_ENV_SNAPSHOT:?}"
 printf '%s\n' "AGENT_GITHUB_TOKEN_FILE=${AGENT_GITHUB_TOKEN_FILE:-}" >> "${MOCK_ENV_SNAPSHOT:?}"
+printf '%s\n' "AGENT_PROMPT_FILE=${AGENT_PROMPT_FILE:-}" >> "${MOCK_ENV_SNAPSHOT:?}"
 printf '%s\n' "AGENT_EXTRA_PROMPT_START" >> "${MOCK_ENV_SNAPSHOT:?}"
 printf '%s\n' "${AGENT_EXTRA_PROMPT:-}" >> "${MOCK_ENV_SNAPSHOT:?}"
 printf '%s\n' "AGENT_EXTRA_PROMPT_END" >> "${MOCK_ENV_SNAPSHOT:?}"
 printf '%s\n' "called" >> "${MOCK_RUN_ONCE_CALLS:?}"
 if [ -n "${MOCK_RUN_ONCE_LOG_JSONL_FILE:-}" ]; then
   cat "${MOCK_RUN_ONCE_LOG_JSONL_FILE}" > "${LOG_DIR}/mock-run.log"
+elif [ -n "${MOCK_RUN_ONCE_LOG_TEXT:-}" ]; then
+  printf '%s' "$MOCK_RUN_ONCE_LOG_TEXT" > "${LOG_DIR}/mock-run.log"
 else
   cat > "${LOG_DIR}/mock-run.log" <<'LOG'
 mock provider output line 1
 mock provider output line 2
 LOG
+fi
+if [ -n "${CODEX_ANSWER_FILE:-}" ] && [ -n "${MOCK_CODEX_ANSWER_CONTENT:-}" ]; then
+  mkdir -p "$(dirname "$CODEX_ANSWER_FILE")"
+  printf '%s' "$MOCK_CODEX_ANSWER_CONTENT" > "$CODEX_ANSWER_FILE"
 fi
 if [ "${MOCK_RUN_ONCE_SLEEP_SECS:-0}" -gt 0 ]; then
   sleep "${MOCK_RUN_ONCE_SLEEP_SECS}"
@@ -205,6 +212,74 @@ run_case_direct_env() {
   assert_file_contains "$MOCK_CURL_CALLS" "X-Task-Claim-Token: claim-token-direct"
   assert_file_contains "$MOCK_CURL_CALLS" '"action": "progress"'
   assert_file_contains "$MOCK_CURL_CALLS" '"action": "complete"'
+}
+
+run_case_preserves_explicit_prompt_override() {
+  local case_dir="${tmp_root}/case-explicit-prompt-override"
+  local result_path="${case_dir}/workspace/task-output/task-custom-prompt/result.md"
+  local custom_prompt="${case_dir}/custom.md"
+  mkdir -p "$case_dir/logs" "$case_dir/workspace"
+  printf 'custom system prompt\n' > "$custom_prompt"
+
+  export MOCK_CURL_CALLS="${case_dir}/curl-calls.log"
+  export MOCK_ENV_SNAPSHOT="${case_dir}/env-snapshot.log"
+  export MOCK_RUN_ONCE_CALLS="${case_dir}/run-once-calls.log"
+  : > "$MOCK_CURL_CALLS"
+  : > "$MOCK_RUN_ONCE_CALLS"
+
+  env \
+    RUN_ONCE_SCRIPT="$mock_run_once" \
+    WORKSPACE_ROOT="${case_dir}/workspace" \
+    LOG_DIR="${case_dir}/logs" \
+    HIVEMOOT_AGENT_TOKEN="task-token" \
+    AGENT_TASK_ID="task-custom-prompt" \
+    AGENT_TASK_PROMPT="Use my custom system prompt" \
+    TARGET_REPO="owner/repo" \
+    AGENT_PROMPT_FILE="$custom_prompt" \
+    bash scripts/run-task.sh
+
+  assert_file_contains "$result_path" "Execution finished successfully."
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "AGENT_PROMPT_FILE=${custom_prompt}"
+  assert_file_not_contains "$MOCK_ENV_SNAPSHOT" "system/task.md"
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "Use my custom system prompt"
+}
+
+run_case_direct_env_messages_file() {
+  local case_dir="${tmp_root}/case-direct-messages-file"
+  local result_path="${case_dir}/workspace/task-output/task-msg-file/result.md"
+  local messages_file="${case_dir}/messages.json"
+  mkdir -p "$case_dir/logs" "$case_dir/workspace"
+
+  cat > "$messages_file" <<'JSON'
+[
+  {"role":"user","content":"Original task details","created_at":"2026-03-05T03:00:00.000Z"},
+  {"role":"system","content":"Task reopened by user","created_at":"2026-03-05T03:05:00.000Z"}
+]
+JSON
+
+  export MOCK_CURL_CALLS="${case_dir}/curl-calls.log"
+  export MOCK_ENV_SNAPSHOT="${case_dir}/env-snapshot.log"
+  export MOCK_RUN_ONCE_CALLS="${case_dir}/run-once-calls.log"
+  : > "$MOCK_CURL_CALLS"
+  : > "$MOCK_RUN_ONCE_CALLS"
+
+  env \
+    RUN_ONCE_SCRIPT="$mock_run_once" \
+    WORKSPACE_ROOT="${case_dir}/workspace" \
+    LOG_DIR="${case_dir}/logs" \
+    HIVEMOOT_AGENT_TOKEN="task-token" \
+    AGENT_TASK_EXECUTE_BASE_URL="https://api.example.com/api/tasks" \
+    AGENT_TASK_CLAIM_TOKEN="claim-token-msg-file" \
+    AGENT_TASK_ID="task-msg-file" \
+    AGENT_TASK_PROMPT="Use complete timeline context" \
+    AGENT_TASK_MESSAGES_FILE="$messages_file" \
+    TARGET_REPO="owner/repo" \
+    bash scripts/run-task.sh
+
+  assert_file_contains "$result_path" "Execution finished successfully."
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "## Conversation Context"
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "Original task details"
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "Task reopened by user"
 }
 
 run_case_claim_mode() {
