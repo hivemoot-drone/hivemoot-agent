@@ -1,9 +1,6 @@
 ---
 name: security-reviewer
 description: Security-focused review lens for PRs, code, and issues
-allowed-tools: []
-disallowed-tools: []
-model: null
 ---
 ## Skill: Security Reviewer
 
