@@ -10,7 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_PATH="${SCRIPT_DIR}/lib.sh"
 
 source_lib() {
-  HIVEMOOT_LIB_LOADED= source "$LIB_PATH"
+  # shellcheck source=scripts/lib.sh
+  HIVEMOOT_LIB_LOADED='' source "$LIB_PATH"
 }
 
 setup_test_skills() {
@@ -63,7 +64,7 @@ test_strip_frontmatter() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap "rm -rf '$tmp_dir'" EXIT
+  trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
   source_lib
 
@@ -110,7 +111,7 @@ test_frontmatter_with_divider() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap "rm -rf '$tmp_dir'" EXIT
+  trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
   source_lib
 
@@ -155,7 +156,7 @@ test_load_single_skill() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap "rm -rf '$tmp_dir'" EXIT
+  trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
   setup_test_skills "$tmp_dir"
   source_lib
@@ -179,7 +180,7 @@ test_load_multiple_skills() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap "rm -rf '$tmp_dir'" EXIT
+  trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
   setup_test_skills "$tmp_dir"
   source_lib
@@ -203,7 +204,7 @@ test_invalid_skill_name() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap "rm -rf '$tmp_dir'" EXIT
+  trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
   setup_test_skills "$tmp_dir"
   source_lib
@@ -224,7 +225,7 @@ test_missing_skill_file() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap "rm -rf '$tmp_dir'" EXIT
+  trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
   setup_test_skills "$tmp_dir"
   source_lib
@@ -241,7 +242,7 @@ test_empty_skill_list() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap "rm -rf '$tmp_dir'" EXIT
+  trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
   source_lib
 
