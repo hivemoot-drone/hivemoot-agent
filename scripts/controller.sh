@@ -11,6 +11,8 @@ log() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=scripts/lib.sh
 . "${SCRIPT_DIR}/lib.sh"
+# shellcheck source=scripts/lib-auth.sh
+. "${SCRIPT_DIR}/lib-auth.sh"
 
 bash_major="${BASH_VERSINFO[0]:-0}"
 print_bash_upgrade_hint() {
