@@ -10,16 +10,22 @@ TESTS_RUN=0
 TESTS_PASSED=0
 
 setup() {
-  TEST_TMP="$(mktemp -d)"
+  # Use SCRIPT_DIR to avoid failures on hosts where /tmp is mounted noexec.
+  TEST_TMP="$(mktemp -d "${SCRIPT_DIR}/.tmp-test-health-reporter.XXXXXX")"
+  trap teardown EXIT
 }
 
 teardown() {
-  rm -rf "$TEST_TMP"
+  local rc=$?
+  if [ -n "${TEST_TMP:-}" ]; then
+    rm -rf "$TEST_TMP"
+    TEST_TMP=""
+  fi
+  return "$rc"
 }
 
 fail() {
   echo "FAIL: $*" >&2
-  teardown
   exit 1
 }
 
@@ -878,7 +884,5 @@ run_test test_sends_optional_fields_on_failure
 run_test test_sends_next_run_at_when_provided
 run_test test_omits_next_run_at_when_empty
 echo ""
-
-teardown
 
 echo "PASS: ${TESTS_PASSED}/${TESTS_RUN} health reporter tests"
