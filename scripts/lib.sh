@@ -192,7 +192,7 @@ repo_name_is_valid() {
 
 strip_frontmatter() {
   local file="$1"
-  awk 'BEGIN{fm=0} /^---$/{fm++; next} fm>=2||fm==0{print}' "$file"
+  awk 'BEGIN{fm=0} /^---$/ && fm<2 {fm++; next} fm>=2||fm==0{print}' "$file"
 }
 
 load_skill_prompts() {
