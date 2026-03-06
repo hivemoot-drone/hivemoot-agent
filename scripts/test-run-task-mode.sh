@@ -207,6 +207,7 @@ run_case_direct_env() {
   assert_file_contains "$result_path" "Execution finished successfully."
   assert_file_contains "$MOCK_ENV_SNAPSHOT" "TARGET_REPO=owner/repo"
   assert_file_contains "$MOCK_ENV_SNAPSHOT" "SESSION_RESUME=0"
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "system/task.md"
   assert_file_contains "$MOCK_ENV_SNAPSHOT" "Find auth regressions"
   assert_file_contains "$MOCK_CURL_CALLS" "URL=https://api.example.com/api/tasks/task-abc/execute"
   assert_file_contains "$MOCK_CURL_CALLS" "X-Task-Claim-Token: claim-token-direct"
@@ -291,7 +292,7 @@ run_case_claim_mode() {
   export MOCK_ENV_SNAPSHOT="${case_dir}/env-snapshot.log"
   export MOCK_RUN_ONCE_CALLS="${case_dir}/run-once-calls.log"
   export MOCK_CLAIM_MODE="task"
-  export MOCK_CLAIM_BODY='{"task":{"task_id":"claimed-42","prompt":"Inspect queue behavior","repos":["owner/claimed"]},"claim_token":"claim-token-42"}'
+  export MOCK_CLAIM_BODY='{"task":{"task_id":"claimed-42","prompt":"Inspect queue behavior","repos":["owner/claimed"]},"claim_token":"claim-token-42","messages":[{"role":"user","content":"Original prompt from user","created_at":"2026-03-05T03:00:00.000Z"},{"role":"system","content":"Task was reopened","created_at":"2026-03-05T03:05:00.000Z"}]}'
   : > "$MOCK_CURL_CALLS"
   : > "$MOCK_RUN_ONCE_CALLS"
 
@@ -311,6 +312,9 @@ run_case_claim_mode() {
   assert_file_contains "$MOCK_CURL_CALLS" "X-Task-Claim-Token: claim-token-42"
   assert_file_contains "$MOCK_ENV_SNAPSHOT" "TARGET_REPO=owner/claimed"
   assert_file_contains "$MOCK_ENV_SNAPSHOT" "AGENT_TIMEOUT_SECONDS=333"
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "## Conversation Context"
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "Original prompt from user"
+  assert_file_contains "$MOCK_ENV_SNAPSHOT" "Task was reopened"
 }
 
 run_case_slot_token_file_bridge() {
