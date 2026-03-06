@@ -104,22 +104,53 @@ resolve_job_home() {
 load_secret_from_file() {
   local var_name="$1"
   local file_var_name="${var_name}_FILE"
+  local var_value=""
+
+  if ! var_value="$(resolve_secret_value "$var_name")"; then
+    exit 1
+  fi
+
+  if [ -z "$var_value" ]; then
+    return 0
+  fi
+
+  printf -v "$var_name" '%s' "$var_value"
+  # shellcheck disable=SC2163  # dynamic export of the variable named in $var_name
+  export "$var_name"
+  # Clear _FILE after promoting to bare var so repeated calls (e.g.
+  # run-task.sh → run-once.sh both call load_secret_from_file) don't
+  # trip resolve_secret_value's mutual-exclusion guard.
+  unset "$file_var_name"
+}
+
+# Resolve secret value without mutating env so callers can consume a secret
+# locally while still forwarding *_FILE to child processes when needed.
+resolve_secret_value() {
+  local var_name="$1"
+  local file_var_name="${var_name}_FILE"
   local var_value="${!var_name:-}"
   local file_value="${!file_var_name:-}"
 
-  if [ -n "$var_value" ] || [ -z "$file_value" ]; then
+  if [ -n "$var_value" ] && [ -n "$file_value" ]; then
+    echo "Set either ${var_name} or ${file_var_name}, not both." >&2
+    return 1
+  fi
+
+  if [ -n "$var_value" ]; then
+    printf '%s' "$var_value"
+    return 0
+  fi
+
+  if [ -z "$file_value" ]; then
     return 0
   fi
 
   if [ ! -f "$file_value" ]; then
     echo "${file_var_name} is set but file does not exist: ${file_value}" >&2
-    exit 1
+    return 1
   fi
 
-  var_value="$(tr -d '\r\n' < "$file_value")"
-  printf -v "$var_name" '%s' "$var_value"
-  # shellcheck disable=SC2163  # dynamic export of the variable named in $var_name
-  export "$var_name"
+  tr -d '\r\n' < "$file_value"
 }
 
 # Load all provider API secrets from their corresponding *_FILE env vars.
@@ -141,6 +172,69 @@ load_provider_secrets() {
   done
 }
 
+repo_name_is_valid() {
+  local repo_name="$1"
+  local repo_segment=""
+
+  if ! printf '%s' "$repo_name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+$'; then
+    return 1
+  fi
+
+  repo_segment="${repo_name#*/}"
+  case "$repo_segment" in
+    .|..)
+      return 1
+      ;;
+  esac
+
+  return 0
+}
+
+strip_frontmatter() {
+  local file="$1"
+  awk 'BEGIN{fm=0} /^---$/ && fm<2 {fm++; next} fm>=2||fm==0{print}' "$file"
+}
+
+load_skill_prompts() {
+  local skills_list="$1"
+  local skills_dir="${2:-/opt/hivemoot-agent/skills}"
+
+  [ -z "$skills_list" ] && return 0
+
+  local skill skill_file result="" first=1
+  while IFS= read -r skill; do
+    skill="$(trim "$skill")"
+    [ -z "$skill" ] && continue
+    case "$skill" in
+      *[!a-zA-Z0-9_-]*)
+        echo "Invalid skill name: '${skill}' (AGENT_SKILLS=${skills_list})" >&2
+        return 1
+        ;;
+    esac
+    skill_file="${skills_dir}/${skill}/SKILL.md"
+    if [ ! -f "$skill_file" ]; then
+      echo "Skill file not found: ${skill_file} (AGENT_SKILLS=${skills_list})" >&2
+      return 1
+    fi
+    local body
+    body="$(strip_frontmatter "$skill_file")"
+    if [ "$first" -eq 1 ]; then
+      result="<skill name=\"${skill}\">
+${body}
+</skill>"
+      first=0
+    else
+      result="${result}
+
+<skill name=\"${skill}\">
+${body}
+</skill>"
+    fi
+  done < <(tr ',' '\n' <<< "$skills_list")
+
+  printf '%s' "$result"
+}
+
 validate_target_repo() {
   local target_repo="$1"
 
@@ -149,7 +243,7 @@ validate_target_repo() {
     exit 1
   fi
 
-  if ! printf '%s' "$target_repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+  if ! repo_name_is_valid "$target_repo"; then
     echo "Invalid TARGET_REPO: ${target_repo}. Expected owner/repo." >&2
     exit 1
   fi
@@ -165,6 +259,35 @@ validate_workspace_root() {
       exit 1
       ;;
   esac
+}
+
+resolve_companion_base_prompt() {
+  local prompt_file="$1"
+  local sibling_base_file=""
+
+  sibling_base_file="$(dirname "$prompt_file")/base.md"
+  if [ "$sibling_base_file" = "$prompt_file" ]; then
+    return 1
+  fi
+
+  if [ -f "$sibling_base_file" ]; then
+    printf '%s' "$sibling_base_file"
+    return 0
+  fi
+
+  return 1
+}
+
+prompt_requires_companion_base() {
+  local prompt_file="$1"
+
+  case "$prompt_file" in
+    /opt/hivemoot-agent/prompts/system/autonomous.md|/opt/hivemoot-agent/prompts/system/task.md)
+      return 0
+      ;;
+  esac
+
+  return 1
 }
 
 validate_agent_id() {
