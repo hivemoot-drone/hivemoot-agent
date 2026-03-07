@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Test suite for health-reporter.sh and update_agent_stats() from lib.sh.
+# Test suite for health-reporter.sh and update_agent_stats() from lib-observability.sh.
 # Runs in CI without network access — all HTTP interactions are mocked.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -10,16 +10,23 @@ TESTS_RUN=0
 TESTS_PASSED=0
 
 setup() {
-  TEST_TMP="$(mktemp -d)"
+  # Use SCRIPT_DIR to avoid failures on hosts where /tmp is mounted noexec.
+  TEST_TMP="$(mktemp -d "${SCRIPT_DIR}/.tmp-test-health-reporter.XXXXXX")"
+  trap teardown EXIT
 }
 
 teardown() {
-  rm -rf "$TEST_TMP"
+  local rc
+  rc=$?
+  if [ -n "${TEST_TMP:-}" ]; then
+    rm -rf "$TEST_TMP"
+    TEST_TMP=""
+  fi
+  return "$rc"
 }
 
 fail() {
   echo "FAIL: $*" >&2
-  teardown
   exit 1
 }
 
@@ -35,18 +42,25 @@ run_test() {
 
 # ── helpers ──────────────────────────────────────────────────────
 
-# Source lib.sh for update_agent_stats
+# Source lib.sh and lib-observability.sh for update_agent_stats
 source_lib() {
-  # Reset the guard so we can re-source
+  # Reset the guards so we can re-source
   unset HIVEMOOT_LIB_LOADED 2>/dev/null || true
+  unset HIVEMOOT_LIB_OBSERVABILITY_LOADED 2>/dev/null || true
   # shellcheck source=scripts/lib.sh
   . "${SCRIPT_DIR}/lib.sh"
+  # shellcheck source=scripts/lib-observability.sh
+  . "${SCRIPT_DIR}/lib-observability.sh"
 }
 
 # Source health-reporter.sh with lib.sh already loaded
 source_reporter() {
   unset HIVEMOOT_HEALTH_REPORTER_LOADED 2>/dev/null || true
   unset HIVEMOOT_LIB_LOADED 2>/dev/null || true
+  # Clear bash's cached curl path so mock PATH overrides take effect reliably.
+  # Without this, bash reuses a cached system curl even after PATH is prepended
+  # with a mock directory. See issue #242.
+  hash -d curl 2>/dev/null || true
   # shellcheck source=scripts/lib.sh
   . "${SCRIPT_DIR}/lib.sh"
   # shellcheck source=scripts/health-reporter.sh
@@ -68,6 +82,18 @@ echo "$http_code"
 MOCK
   chmod +x "$mock_path"
   printf '%s' "$mock_path"
+}
+
+set_mock_path() {
+  local mock_dir="$1"
+  PATH="${mock_dir}:$PATH"
+  hash -r 2>/dev/null || true
+}
+
+restore_path() {
+  local original_path="$1"
+  PATH="$original_path"
+  hash -r 2>/dev/null || true
 }
 
 # Build a valid payload for testing (matches backend HealthReport schema)
