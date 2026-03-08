@@ -4,6 +4,10 @@ description: >
   Structured code review methodology for PRs. Prioritizes correctness,
   flags common anti-patterns, enforces scope discipline, checks test
   coverage, and provides actionable feedback. Language-agnostic.
+disallowedTools:
+  - Write
+  - Edit
+  - NotebookEdit
 ---
 
 ## Skill: Code Reviewer

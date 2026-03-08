@@ -6,6 +6,10 @@ description: >
   maintenance risks, and enforces version pinning discipline. Covers all
   major ecosystems (npm, pip, cargo, go, Maven, gems, etc.), Docker
   images, and CI/CD actions.
+disallowedTools:
+  - Write
+  - Edit
+  - NotebookEdit
 ---
 
 ## Skill: Dependency Auditor
