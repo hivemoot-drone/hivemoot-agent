@@ -175,6 +175,10 @@ docker compose run --rm -v ./secrets:/run/secrets:ro hivemoot-agent
 
 **Loop** — run agents periodically on a schedule:
 
+> **Deprecated:** `RUN_MODE=loop` (Phase 1 in-container supervisor) is deprecated.
+> Migrate to the [Host Controller](#host-controller-phase-2-mvp) (`scripts/controller.sh`)
+> for the recommended deployment. The in-container loop mode will be removed in a future release.
+
 ```bash
 RUN_MODE=loop docker compose up hivemoot-agent
 ```
@@ -560,6 +564,25 @@ mounts a sibling `base.md` when it exists next to the host `AGENT_PROMPT_FILE`.
 When unset, standing agents use `prompts/system/autonomous.md` (prepended by
 `prompts/system/base.md`) and task mode uses `prompts/system/task.md`
 (also prepended by `prompts/system/base.md`).
+
+## Skills
+
+Use `AGENT_SKILLS` to inject a comma-separated list of skill modules from
+`/opt/hivemoot-agent/skills/<name>/SKILL.md` into the composed system prompt.
+Built-in image skills and read-only bind mounts both resolve through that same
+path.
+
+When running the host controller, `AGENT_SKILL_BIND_MOUNTS` can expose custom
+skill directories into worker containers. Each mount must use an absolute host
+path and the exact read-only destination format
+`/host/path:/opt/hivemoot-agent/skills/<name>:ro`. Provide multiple mounts as
+newline-separated specs; destinations outside `/opt/hivemoot-agent/skills/` and
+any `..` segments are rejected.
+
+Managed multi-agent runtimes can also set `AGENT_SKILLS_01` through
+`AGENT_SKILLS_10`. The controller resolves the matching slot for each
+configured `AGENT_ID_XX` and forwards only that skill list to the worker job.
+When a slot-specific value is unset, the runtime falls back to `AGENT_SKILLS`.
 
 ## Optional Override Services
 
