@@ -19,6 +19,29 @@ trim() {
   printf '%s' "$value"
 }
 
+require_non_negative_integer() {
+  local name="$1"
+  local value="$2"
+
+  case "$value" in
+    ''|*[!0-9]*)
+      echo "${name} must be a non-negative integer" >&2
+      exit 1
+      ;;
+  esac
+}
+
+require_positive_integer() {
+  local name="$1"
+  local value="$2"
+
+  require_non_negative_integer "$name" "$value"
+  if [ "$value" -le 0 ]; then
+    echo "${name} must be > 0" >&2
+    exit 1
+  fi
+}
+
 resolve_effective_auth_mode() {
   local provider="$1"
   local configured_auth_mode="${2:-auto}"
