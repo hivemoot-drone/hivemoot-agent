@@ -1259,8 +1259,11 @@ if [ -n "${HEALTH_REPORT_URL:-}" ]; then
   fi
 
   # Extract run summary from the per-attempt log (best-effort; empty string if unavailable).
+  # Gated by HEALTH_REPORT_RUN_SUMMARY=1 (default off) to avoid sending the field to backends
+  # that don't yet have run_summary in their HealthReport schema, which would turn valid
+  # health reports into 400 responses during the migration window.
   _run_summary=""
-  if [ -n "${last_command_log:-}" ] && [ -f "${last_command_log}" ]; then
+  if [ "${HEALTH_REPORT_RUN_SUMMARY:-0}" = "1" ] && [ -n "${last_command_log:-}" ] && [ -f "${last_command_log}" ]; then
     _run_summary="$(extract_run_summary_from_log "$provider" "$last_command_log")" || true
   fi
 
