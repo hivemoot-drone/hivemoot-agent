@@ -147,4 +147,28 @@ GHSA-qffp-2rhf-9h96
 EOF
 expect_fail "GHSA expired entry" "$ignore_ghsa_expired" "$report_file_ghsa"
 
+# Empty and comments-only files: no suppressions to validate, should pass cleanly.
+# Directly relevant after PR #386 cleared .trivyignore — an empty file must not error.
+ignore_empty="$tmpdir/empty.trivyignore"
+: > "$ignore_empty"
+expect_pass "empty trivyignore file" "$ignore_empty" "$report_file"
+
+ignore_comments_only="$tmpdir/comments-only.trivyignore"
+cat > "$ignore_comments_only" <<'EOF'
+# This file intentionally left empty
+# No active suppressions
+EOF
+expect_pass "comments-only trivyignore file" "$ignore_comments_only" "$report_file"
+
+# Multiple valid entries all present in report — verify the all-valid path.
+ignore_multi_valid="$tmpdir/multi-valid.trivyignore"
+cat > "$ignore_multi_valid" <<EOF
+# exp:$tomorrow_utc
+CVE-2025-10001
+# exp:$tomorrow_utc
+CVE-2025-10002
+CVE-2025-10003
+EOF
+expect_pass "multiple valid entries all present in report" "$ignore_multi_valid" "$report_file"
+
 echo "All trivyignore checks passed"
