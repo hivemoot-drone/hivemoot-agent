@@ -380,6 +380,17 @@ If the worker exits non-zero, the controller immediately POSTs `action=fail`
 to the execute endpoint as a safety net for cases where `run-task.sh` itself
 crashed before self-reporting (OOM, container crash).
 
+### Quota and Auth Backoff
+
+When a periodic worker fails with a quota-exhausted or auth-rejected error (detected from the container log), the controller defers subsequent triggers for that agent until the backoff window expires. This prevents crash loops when a provider's daily or hourly quota is exhausted.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `QUOTA_BACKOFF_FLOOR_SECS` | `7200` | Minimum backoff on quota/auth failure in seconds. Set to `0` to disable. Default (2 h) ensures at least one skipped cycle at the standard `PERIODIC_INTERVAL_SECS=3600`. |
+| `QUOTA_BACKOFF_MAX_SECS` | `86400` | Maximum backoff cap for repeated failures (24 h). Covers daily billing limits where retrying within hours will keep burning quota. |
+
+Backoff escalates exponentially (`floor × 2^(consecutive - 1)`, capped at max). Mention-triggered and task-triggered jobs are never subject to this backoff — only periodic cycles are deferred.
+
 Important: this script is designed to run on the host with direct `docker` access. Do not run it from inside another container with a mounted `docker.sock`.
 
 ## Credential Storage (Default)
