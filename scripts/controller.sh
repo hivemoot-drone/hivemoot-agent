@@ -1214,6 +1214,95 @@ run_queue_maintenance() {
   last_queue_maintenance_epoch="$(date +%s)"
 }
 
+# Classify a container log as "quota", "auth", or "normal" based on known
+# provider error patterns.  Reads the whole log with grep — safe because the
+# log is bounded by AGENT_TIMEOUT_SECONDS.
+classify_periodic_failure() {
+  local log_file="$1"
+  [ -f "$log_file" ] || { echo "normal"; return; }
+  [ -s "$log_file" ] || { echo "normal"; return; }
+
+  if grep -qiF \
+      -e 'TerminalQuotaError' \
+      -e 'quota exhausted' \
+      -e 'billing_hard_limit_reached' \
+      -e 'You have exhausted your capacity' \
+      -e '429 Too Many Requests' \
+      -e 'rate_limit_exceeded' \
+      "$log_file" 2>/dev/null; then
+    echo "quota"
+    return
+  fi
+
+  if grep -qiF \
+      -e 'authentication failed' \
+      -e 'auth error' \
+      -e 'token expired' \
+      -e 'Invalid API key' \
+      -e 'Unauthorized' \
+      "$log_file" 2>/dev/null; then
+    echo "auth"
+    return
+  fi
+
+  echo "normal"
+}
+
+# Exponential backoff delay for quota/auth errors.
+# Returns: floor * 2^(consecutive-1), capped at max.
+calculate_quota_backoff_delay() {
+  local consecutive="$1"
+  local delay="$quota_backoff_floor_secs"
+  local i=1
+
+  while [ "$i" -lt "$consecutive" ] && [ "$delay" -lt "$quota_backoff_max_secs" ]; do
+    delay=$((delay * 2))
+    i=$((i + 1))
+  done
+
+  if [ "$delay" -gt "$quota_backoff_max_secs" ]; then
+    delay="$quota_backoff_max_secs"
+  fi
+  echo "$delay"
+}
+
+# Read the backoff-until epoch for an agent.  Returns 0 if no backoff file.
+read_agent_backoff_until() {
+  local agent_id="$1"
+  local backoff_file="${agent_backoff_root}/${agent_id}"
+  [ -f "$backoff_file" ] || { echo "0"; return; }
+  local val=""
+  val="$(grep '^backoff_until=' "$backoff_file" | cut -d= -f2 | head -1)"
+  echo "${val:-0}"
+}
+
+# Read the consecutive quota/auth failure count for an agent.  Returns 0 if
+# no backoff file exists.
+read_agent_backoff_consecutive() {
+  local agent_id="$1"
+  local backoff_file="${agent_backoff_root}/${agent_id}"
+  [ -f "$backoff_file" ] || { echo "0"; return; }
+  local val=""
+  val="$(grep '^consecutive=' "$backoff_file" | cut -d= -f2 | head -1)"
+  echo "${val:-0}"
+}
+
+# Write backoff state: backoff_until epoch and consecutive failure count.
+write_agent_backoff() {
+  local agent_id="$1"
+  local backoff_until="$2"
+  local consecutive="$3"
+  mkdir -p "$agent_backoff_root" 2>/dev/null || true
+  printf 'backoff_until=%s\nconsecutive=%s\n' "$backoff_until" "$consecutive" \
+    > "${agent_backoff_root}/${agent_id}"
+}
+
+# Clear backoff state for an agent (called on periodic success).
+clear_agent_backoff() {
+  local agent_id="$1"
+  rm -f "${agent_backoff_root}/${agent_id}" 2>/dev/null || true
+}
+
 process_queue() {
   local -a trigger_files=()
   local trigger_file=""
@@ -1309,6 +1398,20 @@ process_queue() {
       log "Dropping trigger for unknown agent (${agent_id}): ${processing_file}"
       mv -f "$processing_file" "$failed_file"
       continue
+    fi
+
+    # Periodic triggers respect quota/auth backoff; mention and task triggers
+    # always fire immediately since they represent user-initiated work.
+    if [ "$trigger_type" = "periodic" ] && [ "$quota_backoff_floor_secs" -gt 0 ]; then
+      local _backoff_until=""
+      local _now=""
+      _backoff_until="$(read_agent_backoff_until "$agent_id")"
+      _now="$(date +%s)"
+      if [ "${_backoff_until}" -gt "${_now}" ] 2>/dev/null; then
+        log "Periodic trigger deferred: agent=${agent_id} backoff active for $(( _backoff_until - _now ))s more"
+        mv -f "$processing_file" "${processing_file%.processing}.done" 2>/dev/null || true
+        continue
+      fi
     fi
 
     if [ "$trigger_type" = "mention" ]; then
@@ -1469,6 +1572,10 @@ record_job_completion() {
       completed_jobs=$((completed_jobs + 1))
       final_state="done"
       log "Job completed: id=${job_id} repo=${repo} agent=${agent_id}"
+      # Clear any quota/auth backoff on periodic success.
+      if [ "$trigger_type" = "periodic" ] && [ -n "$agent_id" ] && [ "$agent_id" != "unknown" ]; then
+        clear_agent_backoff "$agent_id"
+      fi
     else
       failed_jobs=$((failed_jobs + 1))
       log "Job failed: id=${job_id} repo=${repo} agent=${agent_id} ack_failed=1"
@@ -1476,6 +1583,27 @@ record_job_completion() {
   else
     failed_jobs=$((failed_jobs + 1))
     log "Job failed: id=${job_id} repo=${repo} agent=${agent_id} exit=${exit_code}"
+    # Detect quota/auth errors in periodic job logs and apply exponential backoff.
+    if [ "$trigger_type" = "periodic" ] && [ -n "$agent_id" ] && [ "$agent_id" != "unknown" ] \
+        && [ "$quota_backoff_floor_secs" -gt 0 ]; then
+      local _container_log="${runs_root}/${job_id}/container.log"
+      local _failure_class=""
+      _failure_class="$(classify_periodic_failure "$_container_log")"
+      case "$_failure_class" in
+        quota|auth)
+          local _prev_consecutive=""
+          local _new_consecutive=""
+          local _backoff_delay=""
+          local _backoff_until=""
+          _prev_consecutive="$(read_agent_backoff_consecutive "$agent_id")"
+          _new_consecutive=$(( _prev_consecutive + 1 ))
+          _backoff_delay="$(calculate_quota_backoff_delay "$_new_consecutive")"
+          _backoff_until=$(( $(date +%s) + _backoff_delay ))
+          write_agent_backoff "$agent_id" "$_backoff_until" "$_new_consecutive"
+          log "Job backoff: agent=${agent_id} class=${_failure_class} consecutive=${_new_consecutive} delay=${_backoff_delay}s"
+          ;;
+      esac
+    fi
   fi
 
   if [ -n "$processing_file" ] && [ -f "$processing_file" ]; then
@@ -1732,6 +1860,22 @@ launch_job() {
         return 0
       fi
     done
+  fi
+
+  # Backoff guard: skip periodic triggers during an active quota/auth backoff window.
+  # This covers both once-mode (queue_periodic_cycle → launch_job directly) and
+  # loop-mode (process_queue already checked, but launch_job is the safe final gate).
+  if [ "$trigger_type" = "periodic" ] && [ "$quota_backoff_floor_secs" -gt 0 ]; then
+    local _backoff_until="" _now=""
+    _backoff_until="$(read_agent_backoff_until "$agent_id")"
+    _now="$(date +%s)"
+    if [ "${_backoff_until}" -gt "${_now}" ] 2>/dev/null; then
+      log "Periodic trigger deferred: agent=${agent_id} backoff active for $(( _backoff_until - _now ))s more"
+      if [ -n "$processing_file" ]; then
+        mv -f "$processing_file" "${processing_file%.processing}.done" 2>/dev/null || true
+      fi
+      return 0
+    fi
   fi
 
   if ! wait_for_available_slot; then
@@ -2165,10 +2309,13 @@ queue_maintenance_interval_secs="${QUEUE_MAINTENANCE_INTERVAL_SECS:-60}"
 heartbeat_interval_secs="${HEARTBEAT_INTERVAL_SECS:-1800}"
 shutdown_grace_secs="${CONTROLLER_SHUTDOWN_GRACE_SECS:-30}"
 global_slot_timeout_exit_code=124
+quota_backoff_floor_secs="${QUOTA_BACKOFF_FLOOR_SECS:-7200}"
+quota_backoff_max_secs="${QUOTA_BACKOFF_MAX_SECS:-86400}"
 workspace_root="${CONTROLLER_WORKSPACE_ROOT:-${WORKSPACE_ROOT:-$(pwd)/data/controller}}"
 shutdown_flag_file="${workspace_root}/shutdown.requested"
 jobs_root="${workspace_root}/jobs"
 runs_root="${workspace_root}/runs"
+agent_backoff_root="${workspace_root}/agent-backoff"
 workspaces_root="${workspace_root}/workspaces"
 homes_root="${workspace_root}/homes"
 queue_root="${workspace_root}/queue"
@@ -2265,6 +2412,8 @@ require_non_negative_integer WORKSPACE_TTL_SECS "$workspace_ttl_secs"
 require_non_negative_integer QUEUE_MAINTENANCE_INTERVAL_SECS "$queue_maintenance_interval_secs"
 require_non_negative_integer HEARTBEAT_INTERVAL_SECS "$heartbeat_interval_secs"
 require_non_negative_integer WATCH_TRIGGER_FAILURE_BACKOFF_SECS "$watch_trigger_failure_backoff_secs"
+require_non_negative_integer QUOTA_BACKOFF_FLOOR_SECS "$quota_backoff_floor_secs"
+require_non_negative_integer QUOTA_BACKOFF_MAX_SECS "$quota_backoff_max_secs"
 if [ "$watch_mentions" = "1" ]; then
   require_positive_integer WATCH_POLL_INTERVAL "$watch_poll_interval"
 fi
@@ -2327,8 +2476,8 @@ if [ "$watch_mentions" = "1" ]; then
   fi
 fi
 
-mkdir -p "$jobs_root" "$runs_root" "$workspaces_root" "$homes_root" "$queue_root" "$watch_state_root" "$lock_dir" "$token_tmp_root"
-chmod 700 "$workspace_root" "$jobs_root" "$runs_root" "$workspaces_root" "$homes_root" "$queue_root" "$watch_state_root" "$lock_dir" "$token_tmp_root" 2>/dev/null || true
+mkdir -p "$jobs_root" "$runs_root" "$workspaces_root" "$homes_root" "$queue_root" "$watch_state_root" "$lock_dir" "$token_tmp_root" "$agent_backoff_root"
+chmod 700 "$workspace_root" "$jobs_root" "$runs_root" "$workspaces_root" "$homes_root" "$queue_root" "$watch_state_root" "$lock_dir" "$token_tmp_root" "$agent_backoff_root" 2>/dev/null || true
 rm -f "$shutdown_flag_file"
 init_global_slots "$global_slots_dir" "$global_max_workers"
 declare -A seen_agents=()

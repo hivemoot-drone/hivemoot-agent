@@ -2663,6 +2663,123 @@ run_task_failure_report_classified_error_case() {
   echo "PASS: controller classifies worker log and includes structured error in task fail payload"
 }
 
+# Test 1: quota pattern in container log → backoff file written with correct epoch.
+run_quota_backoff_write_case() {
+  local repo_root="$1"
+  local case_dir="$2"
+  local controller_log="${case_dir}/controller.log"
+  local controller_pid=""
+  local deadline=""
+
+  mkdir -p "$case_dir"
+  setup_mock_docker "${case_dir}/mock-bin"
+
+  env -i \
+    PATH="${case_dir}/mock-bin:${PATH}" \
+    HOME="${case_dir}/home" \
+    MOCK_DOCKER_STATE_DIR="${case_dir}/mock-state" \
+    MOCK_DOCKER_WAIT_EXIT="1" \
+    MOCK_DOCKER_LOG_CONTENT="429 Too Many Requests: quota exceeded" \
+    TARGET_REPO="owner/repo" \
+    CONTROLLER_RUN_MODE="loop" \
+    CONTROLLER_MAX_WORKERS="1" \
+    CONTROLLER_WORKSPACE_ROOT="${case_dir}/workspace" \
+    WORKER_IMAGE="hivemoot-agent:test" \
+    AGENT_ID_01="worker" \
+    AGENT_GITHUB_TOKEN_01="token-1" \
+    AGENT_TIMEOUT_SECONDS="120" \
+    PERIODIC_INTERVAL_SECS="1" \
+    PERIODIC_JITTER_SECS="0" \
+    QUOTA_BACKOFF_FLOOR_SECS="300" \
+    QUOTA_BACKOFF_MAX_SECS="3600" \
+    bash "${repo_root}/scripts/controller.sh" >"$controller_log" 2>&1 &
+  controller_pid=$!
+
+  deadline=$((SECONDS + 20))
+  while true; do
+    if grep -Fq "Job backoff:" "$controller_log" 2>/dev/null; then
+      break
+    fi
+    if ! kill -0 "$controller_pid" 2>/dev/null; then
+      sed 's/^/  /' "$controller_log" >&2 || true
+      fail "controller exited before quota backoff was observed"
+    fi
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      sed 's/^/  /' "$controller_log" >&2 || true
+      fail "timed out waiting for quota backoff log entry"
+    fi
+    sleep 0.1
+  done
+
+  kill -TERM "$controller_pid" 2>/dev/null || true
+  wait "$controller_pid" 2>/dev/null || true
+
+  # Assert backoff file exists for the worker agent.
+  local backoff_file="${case_dir}/workspace/agent-backoff/worker"
+  assert_exists "$backoff_file"
+
+  local backoff_until=""
+  backoff_until="$(grep '^backoff_until=' "$backoff_file" | cut -d= -f2 | head -1)"
+  local now=""
+  now="$(date +%s)"
+  if [ -z "$backoff_until" ] || [ "$backoff_until" -le "$now" ]; then
+    fail "expected backoff_until to be a future epoch (got: ${backoff_until}, now: ${now})"
+  fi
+
+  local consecutive=""
+  consecutive="$(grep '^consecutive=' "$backoff_file" | cut -d= -f2 | head -1)"
+  if [ "${consecutive:-0}" -lt 1 ]; then
+    fail "expected consecutive >= 1 in backoff file (got: ${consecutive})"
+  fi
+
+  assert_file_contains "$controller_log" "class=quota"
+  echo "PASS: quota error in container log writes backoff state file"
+}
+
+# Test 2: backoff file present → periodic trigger is deferred without launching a worker.
+run_quota_backoff_deferral_case() {
+  local repo_root="$1"
+  local case_dir="$2"
+  local controller_log="${case_dir}/controller.log"
+
+  mkdir -p "${case_dir}/workspace/queue"
+  mkdir -p "${case_dir}/workspace/agent-backoff"
+  setup_mock_docker "${case_dir}/mock-bin"
+
+  # Pre-write a backoff file with backoff_until far in the future.
+  local future_epoch=""
+  future_epoch=$(( $(date +%s) + 86400 ))
+  printf 'backoff_until=%s\nconsecutive=1\n' "$future_epoch" \
+    > "${case_dir}/workspace/agent-backoff/worker"
+
+  env -i \
+    PATH="${case_dir}/mock-bin:${PATH}" \
+    HOME="${case_dir}/home" \
+    MOCK_DOCKER_STATE_DIR="${case_dir}/mock-state" \
+    TARGET_REPO="owner/repo" \
+    CONTROLLER_RUN_MODE="once" \
+    CONTROLLER_MAX_WORKERS="1" \
+    CONTROLLER_WORKSPACE_ROOT="${case_dir}/workspace" \
+    WORKER_IMAGE="hivemoot-agent:test" \
+    AGENT_ID_01="worker" \
+    AGENT_GITHUB_TOKEN_01="token-1" \
+    AGENT_TIMEOUT_SECONDS="120" \
+    PERIODIC_INTERVAL_SECS="3600" \
+    PERIODIC_JITTER_SECS="0" \
+    QUOTA_BACKOFF_FLOOR_SECS="300" \
+    bash "${repo_root}/scripts/controller.sh" >"$controller_log" 2>&1 || true
+
+  # No worker should have been launched — trigger was skipped due to backoff.
+  local run_log="${case_dir}/mock-state/docker-run.log"
+  if [ -f "$run_log" ] && [ -s "$run_log" ]; then
+    fail "expected no docker run in backoff deferral case, but run log exists"
+  fi
+
+  assert_file_contains "$controller_log" "backoff active"
+
+  echo "PASS: periodic trigger deferred when backoff is active"
+}
+
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmpdir="$(mktemp -d "${repo_root}/.tmp-controller-test.XXXXXX")"
@@ -2715,4 +2832,6 @@ run_same_agent_concurrent_case "$repo_root" "${tmpdir}/same-agent-concurrent"
 run_periodic_deferral_cleanup_case "$repo_root" "${tmpdir}/periodic-deferral-cleanup"
 run_task_failure_report_case "$repo_root" "${tmpdir}/task-failure-report"
 run_task_failure_report_classified_error_case "$repo_root" "${tmpdir}/task-failure-classified"
+run_quota_backoff_write_case "$repo_root" "${tmpdir}/quota-backoff-write"
+run_quota_backoff_deferral_case "$repo_root" "${tmpdir}/quota-backoff-deferral"
 echo "PASS: controller script checks"
