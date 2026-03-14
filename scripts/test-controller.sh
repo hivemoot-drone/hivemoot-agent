@@ -2692,6 +2692,7 @@ run_quota_backoff_write_case() {
     PERIODIC_JITTER_SECS="0" \
     QUOTA_BACKOFF_FLOOR_SECS="300" \
     QUOTA_BACKOFF_MAX_SECS="3600" \
+    QUOTA_BACKOFF_JITTER_PCT="0" \
     bash "${repo_root}/scripts/controller.sh" >"$controller_log" 2>&1 &
   controller_pid=$!
 
@@ -2767,6 +2768,7 @@ run_quota_backoff_deferral_case() {
     PERIODIC_INTERVAL_SECS="3600" \
     PERIODIC_JITTER_SECS="0" \
     QUOTA_BACKOFF_FLOOR_SECS="300" \
+    QUOTA_BACKOFF_JITTER_PCT="0" \
     bash "${repo_root}/scripts/controller.sh" >"$controller_log" 2>&1 || true
 
   # No worker should have been launched — trigger was skipped due to backoff.

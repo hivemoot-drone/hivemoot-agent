@@ -1249,7 +1249,7 @@ classify_periodic_failure() {
 }
 
 # Exponential backoff delay for quota/auth errors.
-# Returns: floor * 2^(consecutive-1), capped at max.
+# Returns: floor * 2^(consecutive-1), capped at max, with optional percentage jitter.
 calculate_quota_backoff_delay() {
   local consecutive="$1"
   local delay="$quota_backoff_floor_secs"
@@ -1263,6 +1263,19 @@ calculate_quota_backoff_delay() {
   if [ "$delay" -gt "$quota_backoff_max_secs" ]; then
     delay="$quota_backoff_max_secs"
   fi
+
+  if [ "$quota_backoff_jitter_pct" -gt 0 ] && [ "$delay" -gt 0 ]; then
+    local jitter=$((delay * quota_backoff_jitter_pct / 100))
+    if [ "$jitter" -gt 0 ]; then
+      local span=$((jitter * 2 + 1))
+      local offset=$((RANDOM % span - jitter))
+      delay=$((delay + offset))
+      if [ "$delay" -lt 1 ]; then
+        delay=1
+      fi
+    fi
+  fi
+
   echo "$delay"
 }
 
@@ -2311,6 +2324,7 @@ shutdown_grace_secs="${CONTROLLER_SHUTDOWN_GRACE_SECS:-30}"
 global_slot_timeout_exit_code=124
 quota_backoff_floor_secs="${QUOTA_BACKOFF_FLOOR_SECS:-7200}"
 quota_backoff_max_secs="${QUOTA_BACKOFF_MAX_SECS:-86400}"
+quota_backoff_jitter_pct="${QUOTA_BACKOFF_JITTER_PCT:-15}"
 workspace_root="${CONTROLLER_WORKSPACE_ROOT:-${WORKSPACE_ROOT:-$(pwd)/data/controller}}"
 shutdown_flag_file="${workspace_root}/shutdown.requested"
 jobs_root="${workspace_root}/jobs"
@@ -2414,6 +2428,11 @@ require_non_negative_integer HEARTBEAT_INTERVAL_SECS "$heartbeat_interval_secs"
 require_non_negative_integer WATCH_TRIGGER_FAILURE_BACKOFF_SECS "$watch_trigger_failure_backoff_secs"
 require_non_negative_integer QUOTA_BACKOFF_FLOOR_SECS "$quota_backoff_floor_secs"
 require_non_negative_integer QUOTA_BACKOFF_MAX_SECS "$quota_backoff_max_secs"
+require_non_negative_integer QUOTA_BACKOFF_JITTER_PCT "$quota_backoff_jitter_pct"
+if [ "$quota_backoff_jitter_pct" -gt 100 ]; then
+  echo "QUOTA_BACKOFF_JITTER_PCT must be between 0 and 100" >&2
+  exit 1
+fi
 if [ "$watch_mentions" = "1" ]; then
   require_positive_integer WATCH_POLL_INTERVAL "$watch_poll_interval"
 fi
