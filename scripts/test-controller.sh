@@ -2782,6 +2782,54 @@ run_quota_backoff_deferral_case() {
   echo "PASS: periodic trigger deferred when backoff is active"
 }
 
+# Test 3: a successful mention job clears an existing backoff file.
+run_quota_backoff_clear_on_mention_success_case() {
+  local repo_root="$1"
+  local case_dir="$2"
+  local controller_log="${case_dir}/controller.log"
+
+  mkdir -p "${case_dir}/workspace/agent-backoff"
+  setup_mock_docker "${case_dir}/mock-bin"
+  setup_mock_hivemoot "${case_dir}/mock-bin"
+
+  # Pre-write a backoff file with a future epoch to simulate a prior quota hit.
+  local future_epoch=""
+  future_epoch=$(( $(date +%s) + 86400 ))
+  printf 'backoff_until=%s\nconsecutive=2\n' "$future_epoch" \
+    > "${case_dir}/workspace/agent-backoff/worker"
+
+  env -i \
+    PATH="${case_dir}/mock-bin:${PATH}" \
+    HOME="${case_dir}/home" \
+    MOCK_DOCKER_STATE_DIR="${case_dir}/mock-state" \
+    MOCK_DOCKER_WAIT_SLEEP_SECS="0" \
+    MOCK_HIVEMOOT_STATE_DIR="${case_dir}/hivemoot-state" \
+    MOCK_HIVEMOOT_WATCH_OUTPUT='{"threadId":"thread-456","number":99,"title":"Mention test","author":"user","body":"@worker please check","url":"https://github.com/owner/repo/issues/99#issuecomment-1","timestamp":"2026-01-01T00:00:00Z"}' \
+    TARGET_REPO="owner/repo" \
+    CONTROLLER_RUN_MODE="once" \
+    CONTROLLER_MAX_WORKERS="1" \
+    CONTROLLER_WORKSPACE_ROOT="${case_dir}/workspace" \
+    WORKER_IMAGE="hivemoot-agent:test" \
+    AGENT_ID_01="worker" \
+    AGENT_GITHUB_TOKEN_01="token-1" \
+    AGENT_TIMEOUT_SECONDS="120" \
+    WATCH_MENTIONS="1" \
+    WATCH_POLL_INTERVAL="30" \
+    PERIODIC_INTERVAL_SECS="3600" \
+    PERIODIC_JITTER_SECS="0" \
+    QUOTA_BACKOFF_FLOOR_SECS="300" \
+    bash "${repo_root}/scripts/controller.sh" >"$controller_log" 2>&1 || true
+
+  # The backoff file must be gone: a successful mention run proves credentials
+  # are healthy and should re-enable periodic scheduling.
+  local backoff_file="${case_dir}/workspace/agent-backoff/worker"
+  if [ -f "$backoff_file" ]; then
+    fail "backoff file must be cleared after a successful job (any trigger type)"
+  fi
+
+  echo "PASS: successful mention job clears prior quota backoff"
+}
+
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmpdir="$(mktemp -d "${repo_root}/.tmp-controller-test.XXXXXX")"
@@ -2836,4 +2884,5 @@ run_task_failure_report_case "$repo_root" "${tmpdir}/task-failure-report"
 run_task_failure_report_classified_error_case "$repo_root" "${tmpdir}/task-failure-classified"
 run_quota_backoff_write_case "$repo_root" "${tmpdir}/quota-backoff-write"
 run_quota_backoff_deferral_case "$repo_root" "${tmpdir}/quota-backoff-deferral"
+run_quota_backoff_clear_on_mention_success_case "$repo_root" "${tmpdir}/quota-backoff-clear-mention"
 echo "PASS: controller script checks"

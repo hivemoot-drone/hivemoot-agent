@@ -1585,8 +1585,9 @@ record_job_completion() {
       completed_jobs=$((completed_jobs + 1))
       final_state="done"
       log "Job completed: id=${job_id} repo=${repo} agent=${agent_id}"
-      # Clear any quota/auth backoff on periodic success.
-      if [ "$trigger_type" = "periodic" ] && [ -n "$agent_id" ] && [ "$agent_id" != "unknown" ]; then
+      # Clear any quota/auth backoff on any successful job — a successful run
+      # proves credentials and quota are healthy regardless of trigger type.
+      if [ -n "$agent_id" ] && [ "$agent_id" != "unknown" ]; then
         clear_agent_backoff "$agent_id"
       fi
     else
