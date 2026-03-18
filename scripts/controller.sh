@@ -2036,15 +2036,13 @@ start_agent_scheduler() {
 # next_run_at is approximated as now + periodic_interval; the controller loop
 # does not track exact per-agent wake times from scheduler subshells.
 fire_heartbeats() {
-  local next_run_at agent_id health_token_input
+  local next_run_at agent_id
   next_run_at="$(date -u -d "+${periodic_interval} seconds" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
     || date -u -v "+${periodic_interval}S" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
     || true)"
-  # Use the shared health report auth input, not per-agent GitHub PATs.
-  # Prefer the file path when present, otherwise fall back to the inline token.
-  health_token_input="${HIVEMOOT_AGENT_TOKEN_FILE:-${HIVEMOOT_AGENT_TOKEN:-}}"
+  # Use the shared backend token resolved once at startup. Not per-agent GitHub PATs.
   for agent_id in "${agent_ids[@]}"; do
-    send_heartbeat "$agent_id" "$target_repo" "$health_token_input" "$next_run_at" || true
+    send_heartbeat "$agent_id" "$target_repo" "$_controller_backend_token" "$next_run_at" || true
     log "Heartbeat attempted: agent=${agent_id}"
   done
 }
@@ -2281,14 +2279,20 @@ if [ "$watch_tasks" = "0" ]; then
   validate_target_repo "$target_repo"
 fi
 
+# Resolve the shared backend token once at startup.
+# Applies mutual-exclusion guard: fails if both HIVEMOOT_AGENT_TOKEN and
+# HIVEMOOT_AGENT_TOKEN_FILE are set. Does not mutate the environment, so
+# append_secret_env still forwards _FILE to workers for secure file-mount.
+if ! _controller_backend_token="$(resolve_secret_value HIVEMOOT_AGENT_TOKEN)"; then
+  exit 1
+fi
+
 if [ "$watch_tasks" = "1" ]; then
-  if ! task_executor_token="$(resolve_secret_value HIVEMOOT_AGENT_TOKEN)"; then
-    exit 1
-  fi
-  if [ -z "$task_executor_token" ]; then
+  if [ -z "$_controller_backend_token" ]; then
     echo "HIVEMOOT_AGENT_TOKEN or HIVEMOOT_AGENT_TOKEN_FILE is required when WATCH_TASKS=1." >&2
     exit 1
   fi
+  task_executor_token="$_controller_backend_token"
   if [ -z "$task_claim_url" ]; then
     echo "AGENT_TASK_CLAIM_URL is required when WATCH_TASKS=1." >&2
     exit 1

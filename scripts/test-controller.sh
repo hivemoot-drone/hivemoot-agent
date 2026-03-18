@@ -1428,6 +1428,46 @@ run_heartbeat_token_file_case() {
   echo "PASS: controller heartbeats authenticate with HIVEMOOT_AGENT_TOKEN_FILE"
 }
 
+run_backend_token_mutual_exclusion_case() {
+  local repo_root="$1"
+  local case_dir="$2"
+  local token_file=""
+
+  mkdir -p "$case_dir"
+  setup_mock_docker "${case_dir}/mock-bin"
+
+  token_file="${case_dir}/secrets/hivemoot-agent-token"
+  mkdir -p "$(dirname "$token_file")"
+  printf '%s' 'shared-token-from-file' > "$token_file"
+  chmod 600 "$token_file"
+
+  # Both HIVEMOOT_AGENT_TOKEN and HIVEMOOT_AGENT_TOKEN_FILE set — controller must fail fast.
+  if env -i \
+    PATH="${case_dir}/mock-bin:${PATH}" \
+    HOME="${case_dir}/home" \
+    MOCK_DOCKER_STATE_DIR="${case_dir}/mock-state" \
+    TARGET_REPO="owner/repo" \
+    CONTROLLER_RUN_MODE="loop" \
+    CONTROLLER_MAX_WORKERS="1" \
+    CONTROLLER_WORKSPACE_ROOT="${case_dir}/workspace" \
+    WORKER_IMAGE="hivemoot-agent:test" \
+    AGENT_ID_01="worker" \
+    AGENT_GITHUB_TOKEN_01="token-1" \
+    AGENT_TIMEOUT_SECONDS="120" \
+    PERIODIC_INTERVAL_SECS="60" \
+    PERIODIC_JITTER_SECS="0" \
+    HIVEMOOT_AGENT_TOKEN="inline-token" \
+    HIVEMOOT_AGENT_TOKEN_FILE="${token_file}" \
+    bash "${repo_root}/scripts/controller.sh" >"${case_dir}/controller.log" 2>&1
+  then
+    fail "controller should exit non-zero when both HIVEMOOT_AGENT_TOKEN and HIVEMOOT_AGENT_TOKEN_FILE are set"
+  fi
+
+  assert_file_contains "${case_dir}/controller.log" "Set either HIVEMOOT_AGENT_TOKEN or HIVEMOOT_AGENT_TOKEN_FILE, not both."
+
+  echo "PASS: controller fails fast when both HIVEMOOT_AGENT_TOKEN and HIVEMOOT_AGENT_TOKEN_FILE are set"
+}
+
 run_task_watch_no_task_case() {
   local repo_root="$1"
   local case_dir="$2"
@@ -2698,6 +2738,7 @@ run_task_watch_linux_permission_repair_case "$repo_root" "${tmpdir}/task-watch-l
 run_task_watch_token_file_case "$repo_root" "${tmpdir}/task-watch-token-file"
 run_heartbeat_inline_token_case "$repo_root" "${tmpdir}/heartbeat-inline-token"
 run_heartbeat_token_file_case "$repo_root" "${tmpdir}/heartbeat-token-file"
+run_backend_token_mutual_exclusion_case "$repo_root" "${tmpdir}/backend-token-mutual-exclusion"
 run_task_watch_no_task_case "$repo_root" "${tmpdir}/task-watch-empty"
 run_task_watch_invalid_repo_case "$repo_root" "${tmpdir}/task-watch-invalid-repo"
 run_task_watch_scope_validation_case "$repo_root" "${tmpdir}/task-watch-scope-validation"
