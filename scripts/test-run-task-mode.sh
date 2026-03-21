@@ -178,6 +178,7 @@ MOCK_CURL
 chmod +x "$mock_curl"
 
 export PATH="${mock_bin}:$PATH"
+hash -r 2>/dev/null || true
 export AGENT_PROVIDER="claude"
 
 run_case_direct_env() {
