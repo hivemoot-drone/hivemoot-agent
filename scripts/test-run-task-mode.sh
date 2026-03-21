@@ -1290,7 +1290,6 @@ JSONL
 # generic "exit code N" fallback.
 run_case_classified_failure_reason() {
   local case_dir="${tmp_root}/case-classified-failure"
-  local result_path="${case_dir}/workspace/task-output/task-token-fail/result.md"
   mkdir -p "$case_dir/logs" "$case_dir/workspace"
 
   # Mock run-once that writes a known run-once.sh error pattern to stderr.
@@ -1333,7 +1332,6 @@ FAIL_MOCK
 # fall back to the generic "exit code N" message.
 run_case_unclassified_failure_fallback() {
   local case_dir="${tmp_root}/case-unclassified-failure"
-  local result_path="${case_dir}/workspace/task-output/task-unknown-fail/result.md"
   mkdir -p "$case_dir/logs" "$case_dir/workspace"
 
   local mock_fail_unknown="${case_dir}/mock-fail-unknown.sh"
