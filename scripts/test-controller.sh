@@ -1185,6 +1185,7 @@ run_task_watch_case() {
     WATCH_TASKS="1" \
     TASK_DISPATCH_AGENT_IDS="worker" \
     AGENT_TASK_CLAIM_URL="https://api.example.com/api/tasks/claim" \
+    AGENT_TASK_HEARTBEAT_INTERVAL_SECONDS="30" \
     HIVEMOOT_AGENT_TOKEN="shared-token" \
     CONTROLLER_MAX_WORKERS="1" \
     CONTROLLER_WORKSPACE_ROOT="${case_dir}/workspace" \
@@ -1206,6 +1207,7 @@ run_task_watch_case() {
   assert_file_contains "$run_log" "-e AGENT_TASK_MESSAGES_FILE=/workspace/task-input/task-claim-1/messages.json"
   assert_file_contains "$run_log" "-e AGENT_TASK_CLAIM_TOKEN=claim-token-1"
   assert_file_contains "$run_log" "-e AGENT_TASK_EXECUTE_BASE_URL=https://api.example.com/api/tasks"
+  assert_file_contains "$run_log" "-e AGENT_TASK_HEARTBEAT_INTERVAL_SECONDS=30"
   assert_file_not_contains "$run_log" "-e RUN_MODE=once"
 
   curl_log="${case_dir}/curl-state/curl.log"
