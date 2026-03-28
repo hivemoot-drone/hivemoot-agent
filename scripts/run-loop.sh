@@ -749,7 +749,7 @@ start_agent_periodic_scheduler() {
       # appropriate backoff tier: quota (long) > rate_limited (short) > default.
       local failure_class=""
       local latest_log=""
-      latest_log="$(ls -t "${workspace_root}/runs/${agent_id}"/*.log 2>/dev/null | head -1 || true)"
+      latest_log="$(find "${workspace_root}/runs/${agent_id}" -maxdepth 1 -name "*.log" -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2- || true)"
       if [ -n "$latest_log" ]; then
         failure_class="$(classify_periodic_failure "$latest_log" 2>/dev/null || true)"
       fi
