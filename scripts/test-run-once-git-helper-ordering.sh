@@ -14,6 +14,7 @@ fail() {
 }
 
 # Find the line numbers for the two anchors.
+# shellcheck disable=SC2016  # single-quoted pattern is intentional: grep sees \$ as literal $
 home_line="$(grep -n 'export HOME="\$job_home"' "$script" | head -1 | cut -d: -f1)"
 setup_git_line="$(grep -n 'gh auth setup-git' "$script" | head -1 | cut -d: -f1)"
 
