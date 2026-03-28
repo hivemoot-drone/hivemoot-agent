@@ -392,11 +392,6 @@ if ! gh api "repos/${target_repo}" --jq .full_name >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! gh auth setup-git 2>&1; then
-  echo "Failed to configure git credential helper via gh auth setup-git" >&2
-  exit 1
-fi
-
 if [ "$token_mode" = "user" ]; then
   agent_name="${agent_git_name:-$github_login}"
   agent_email="${agent_git_email:-${github_login}@users.noreply.github.com}"
@@ -428,6 +423,15 @@ if [ -n "$job_home" ]; then
 
   export HOME="$job_home"
   log "Job HOME set to: ${job_home}"
+fi
+
+# Configure git credential helper after HOME is set to the isolated job
+# home (or the container home in managed mode). Running this before the
+# HOME switch would write the helper into the wrong .gitconfig, breaking
+# authenticated pushes even though clone/fetch still work.
+if ! gh auth setup-git 2>&1; then
+  echo "Failed to configure git credential helper via gh auth setup-git" >&2
+  exit 1
 fi
 
 # Per-job cleanup: remove transient state on exit when JOB_ID is set.
