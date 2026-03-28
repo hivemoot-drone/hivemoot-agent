@@ -10,6 +10,8 @@ log() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=scripts/lib.sh
 . "${SCRIPT_DIR}/lib.sh"
+# shellcheck source=scripts/lib-classify.sh
+. "${SCRIPT_DIR}/lib-classify.sh"
 # shellcheck source=scripts/lib-slots.sh
 . "${SCRIPT_DIR}/lib-slots.sh"
 
@@ -40,6 +42,16 @@ agent_failure_backoff_base="${PERIODIC_AGENT_FAILURE_BACKOFF_BASE_SECS:-300}"
 agent_failure_backoff_max="${PERIODIC_AGENT_FAILURE_BACKOFF_MAX_SECS:-3600}"
 agent_failure_backoff_jitter_pct="${PERIODIC_AGENT_FAILURE_BACKOFF_JITTER_PCT:-15}"
 
+# Quota-exhaustion backoff (daily limit / billing hard stop): hours to days.
+quota_backoff_floor_secs="${QUOTA_BACKOFF_FLOOR_SECS:-7200}"
+quota_backoff_max_secs="${QUOTA_BACKOFF_MAX_SECS:-86400}"
+quota_backoff_jitter_pct="${QUOTA_BACKOFF_JITTER_PCT:-15}"
+
+# Transient rate-limit backoff (429 / rate_limit_exceeded): minutes.
+rate_limit_backoff_floor_secs="${RATE_LIMIT_BACKOFF_FLOOR_SECS:-300}"
+rate_limit_backoff_max_secs="${RATE_LIMIT_BACKOFF_MAX_SECS:-1800}"
+rate_limit_backoff_jitter_pct="${RATE_LIMIT_BACKOFF_JITTER_PCT:-20}"
+
 # Mention watching (opt-in)
 watch_mentions="${WATCH_MENTIONS:-}"
 watch_review_requests="${WATCH_REVIEW_REQUESTS:-0}"
@@ -66,6 +78,12 @@ _require_nonneg_int MAX_CONSECUTIVE_FAILURES            "$max_failures"
 _require_nonneg_int PERIODIC_AGENT_FAILURE_BACKOFF_BASE_SECS "$agent_failure_backoff_base"
 _require_nonneg_int PERIODIC_AGENT_FAILURE_BACKOFF_MAX_SECS  "$agent_failure_backoff_max"
 _require_nonneg_int PERIODIC_AGENT_FAILURE_BACKOFF_JITTER_PCT "$agent_failure_backoff_jitter_pct"
+_require_nonneg_int QUOTA_BACKOFF_FLOOR_SECS            "$quota_backoff_floor_secs"
+_require_nonneg_int QUOTA_BACKOFF_MAX_SECS              "$quota_backoff_max_secs"
+_require_nonneg_int QUOTA_BACKOFF_JITTER_PCT            "$quota_backoff_jitter_pct"
+_require_nonneg_int RATE_LIMIT_BACKOFF_FLOOR_SECS       "$rate_limit_backoff_floor_secs"
+_require_nonneg_int RATE_LIMIT_BACKOFF_MAX_SECS         "$rate_limit_backoff_max_secs"
+_require_nonneg_int RATE_LIMIT_BACKOFF_JITTER_PCT       "$rate_limit_backoff_jitter_pct"
 unset -f _require_nonneg_int
 
 if [ "$periodic_interval" -le 0 ]; then
@@ -84,6 +102,12 @@ fi
 if [ "$agent_failure_backoff_jitter_pct" -gt 100 ]; then
   echo "PERIODIC_AGENT_FAILURE_BACKOFF_JITTER_PCT must be between 0 and 100" >&2
   exit 1
+fi
+if [ "$quota_backoff_jitter_pct" -gt 100 ]; then
+  echo "QUOTA_BACKOFF_JITTER_PCT must be between 0 and 100" >&2; exit 1
+fi
+if [ "$rate_limit_backoff_jitter_pct" -gt 100 ]; then
+  echo "RATE_LIMIT_BACKOFF_JITTER_PCT must be between 0 and 100" >&2; exit 1
 fi
 
 if [ "$watch_mentions" = "1" ]; then
@@ -385,6 +409,82 @@ calculate_agent_backoff_delay() {
   echo "$delay"
 }
 
+# Exponential backoff for quota-exhaustion failures (daily limit / billing cap).
+# Uses quota_backoff_floor_secs / quota_backoff_max_secs / quota_backoff_jitter_pct.
+calculate_quota_backoff_delay() {
+  local failure_count="$1"
+  local delay="$quota_backoff_floor_secs"
+
+  if [ "$failure_count" -le 0 ] || [ "$delay" -le 0 ]; then
+    echo 0
+    return
+  fi
+
+  for ((attempt = 1; attempt < failure_count; attempt++)); do
+    if [ "$delay" -ge "$quota_backoff_max_secs" ]; then
+      delay="$quota_backoff_max_secs"
+      break
+    fi
+    delay=$((delay * 2))
+  done
+
+  if [ "$delay" -gt "$quota_backoff_max_secs" ]; then
+    delay="$quota_backoff_max_secs"
+  fi
+
+  if [ "$quota_backoff_jitter_pct" -gt 0 ] && [ "$delay" -gt 0 ]; then
+    local jitter=$((delay * quota_backoff_jitter_pct / 100))
+    if [ "$jitter" -gt 0 ]; then
+      local span=$((jitter * 2 + 1))
+      local offset=$((RANDOM % span - jitter))
+      delay=$((delay + offset))
+      if [ "$delay" -lt 1 ]; then
+        delay=1
+      fi
+    fi
+  fi
+
+  echo "$delay"
+}
+
+# Exponential backoff for transient rate-limit failures (429 / rate_limit_exceeded).
+# Uses rate_limit_backoff_floor_secs / rate_limit_backoff_max_secs / rate_limit_backoff_jitter_pct.
+calculate_rate_limit_backoff_delay() {
+  local failure_count="$1"
+  local delay="$rate_limit_backoff_floor_secs"
+
+  if [ "$failure_count" -le 0 ] || [ "$delay" -le 0 ]; then
+    echo 0
+    return
+  fi
+
+  for ((attempt = 1; attempt < failure_count; attempt++)); do
+    if [ "$delay" -ge "$rate_limit_backoff_max_secs" ]; then
+      delay="$rate_limit_backoff_max_secs"
+      break
+    fi
+    delay=$((delay * 2))
+  done
+
+  if [ "$delay" -gt "$rate_limit_backoff_max_secs" ]; then
+    delay="$rate_limit_backoff_max_secs"
+  fi
+
+  if [ "$rate_limit_backoff_jitter_pct" -gt 0 ] && [ "$delay" -gt 0 ]; then
+    local jitter=$((delay * rate_limit_backoff_jitter_pct / 100))
+    if [ "$jitter" -gt 0 ]; then
+      local span=$((jitter * 2 + 1))
+      local offset=$((RANDOM % span - jitter))
+      delay=$((delay + offset))
+      if [ "$delay" -lt 1 ]; then
+        delay=1
+      fi
+    fi
+  fi
+
+  echo "$delay"
+}
+
 # ── Mention Watchers (one per agent, only when WATCH_MENTIONS=1) ──
 
 start_mention_watcher() {
@@ -645,16 +745,43 @@ start_agent_periodic_scheduler() {
 
       consecutive_failures=$((consecutive_failures + 1))
 
+      # Classify the failure from the most recent run log to select the
+      # appropriate backoff tier: quota (long) > rate_limited (short) > default.
+      local failure_class=""
+      local latest_log=""
+      latest_log="$(ls -t "${workspace_root}/runs/${agent_id}"/*.log 2>/dev/null | head -1 || true)"
+      if [ -n "$latest_log" ]; then
+        failure_class="$(classify_periodic_failure "$latest_log" 2>/dev/null || true)"
+      fi
+
       local backoff_delay=""
-      backoff_delay="$(calculate_agent_backoff_delay "$consecutive_failures")"
+      case "$failure_class" in
+        quota)
+          backoff_delay="$(calculate_quota_backoff_delay "$consecutive_failures")"
+          ;;
+        rate_limited)
+          backoff_delay="$(calculate_rate_limit_backoff_delay "$consecutive_failures")"
+          ;;
+        *)
+          backoff_delay="$(calculate_agent_backoff_delay "$consecutive_failures")"
+          ;;
+      esac
+
       local failure_epoch=""
       failure_epoch="$(date +%s)"
       next_retry_at=$((failure_epoch + backoff_delay))
 
+      local backoff_label=""
+      case "$failure_class" in
+        quota)        backoff_label=" [quota]" ;;
+        rate_limited) backoff_label=" [rate_limited]" ;;
+        *)            backoff_label="" ;;
+      esac
+
       if [ "$backoff_delay" -gt 0 ]; then
-        log "Periodic[${agent_id}]: failed (${consecutive_failures}x); cooldown ${backoff_delay}s"
+        log "Periodic[${agent_id}]: failed (${consecutive_failures}x)${backoff_label}; cooldown ${backoff_delay}s"
       else
-        log "Periodic[${agent_id}]: failed (${consecutive_failures}x); retrying next cycle"
+        log "Periodic[${agent_id}]: failed (${consecutive_failures}x)${backoff_label}; retrying next cycle"
       fi
 
       if [ "$consecutive_failures" -ge "$max_failures" ]; then
@@ -686,6 +813,8 @@ start_periodic_scheduler() {
 log "Loop mode starting: ${agent_count} agents, repo=${target_repo:-unset}"
 log "  Periodic interval: ${periodic_interval}s +/-${periodic_jitter}s"
 log "  Periodic failure backoff: base=${agent_failure_backoff_base}s max=${agent_failure_backoff_max}s jitter=${agent_failure_backoff_jitter_pct}%"
+log "  Quota backoff: floor=${quota_backoff_floor_secs}s max=${quota_backoff_max_secs}s jitter=${quota_backoff_jitter_pct}%"
+log "  Rate-limit backoff: floor=${rate_limit_backoff_floor_secs}s max=${rate_limit_backoff_max_secs}s jitter=${rate_limit_backoff_jitter_pct}%"
 if [ "$watch_mentions" = "1" ]; then
   log "  Mention watching: enabled (poll interval: ${watch_poll_interval}s)"
   if [ "$watch_review_requests" = "1" ]; then

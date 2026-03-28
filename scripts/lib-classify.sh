@@ -116,3 +116,56 @@ classify_run_failure_from_file() {
 
   return 0
 }
+
+# Classify a periodic run failure from a run log file.
+#
+# Scans for quota-exhaustion and rate-limiting patterns emitted during a run
+# and prints one of two classification tokens. Prints nothing when no known
+# pattern is found; the caller should fall back to the default failure backoff.
+#
+# Return values (via stdout):
+#   quota        — daily/billing quota exhausted; use a long backoff (hours)
+#   rate_limited — transient rate limit; use a short backoff (minutes)
+#   (empty)      — no recognisable pattern; use the default failure backoff
+#
+# Pattern taxonomy:
+#   quota        — TerminalQuotaError, "quota exhausted", billing_hard_limit_reached,
+#                  "You have exhausted your capacity", RESOURCE_EXHAUSTED
+#   rate_limited — "429 Too Many Requests", rate_limit_exceeded, rate_limit_error,
+#                  overloaded_error
+#
+# Case-insensitive matching is used for both groups so that minor casing
+# variations across providers are covered without additional patterns.
+#
+# Arguments:
+#   $1 — path to a run log file
+classify_periodic_failure() {
+  local file="$1"
+
+  [ -s "$file" ] || return 0
+
+  # Quota-exhaustion patterns: terminal — long backoff (hours to days)
+  if grep -qiF \
+       -e 'TerminalQuotaError' \
+       -e 'quota exhausted' \
+       -e 'billing_hard_limit_reached' \
+       -e 'You have exhausted your capacity' \
+       -e 'RESOURCE_EXHAUSTED' \
+       "$file" 2>/dev/null; then
+    printf 'quota'
+    return 0
+  fi
+
+  # Rate-limit patterns: transient — short backoff (minutes)
+  if grep -qiF \
+       -e '429 Too Many Requests' \
+       -e 'rate_limit_exceeded' \
+       -e 'rate_limit_error' \
+       -e 'overloaded_error' \
+       "$file" 2>/dev/null; then
+    printf 'rate_limited'
+    return 0
+  fi
+
+  return 0
+}

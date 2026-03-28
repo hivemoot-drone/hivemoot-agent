@@ -163,4 +163,80 @@ if [ "$result" != "Kilo provider API key (ANTHROPIC_API_KEY) is missing for KILO
   fail "Kilo pattern must take priority over standalone provider pattern (got: ${result})"
 fi
 
+# ── classify_periodic_failure() ────────────────────────────────────────────────
+
+echo "Running classify_periodic_failure() tests"
+
+# empty / missing
+assert_eq "" "$(classify_periodic_failure "${tmp}/nonexistent")" \
+  "classify_periodic_failure: nonexistent file → empty"
+
+touch "${tmp}/pf-empty"
+assert_eq "" "$(classify_periodic_failure "${tmp}/pf-empty")" \
+  "classify_periodic_failure: empty file → empty"
+
+# --- quota patterns ---
+
+printf 'Error: TerminalQuotaError\n' > "${tmp}/pf-terminal-quota"
+assert_eq "quota" "$(classify_periodic_failure "${tmp}/pf-terminal-quota")" \
+  "classify_periodic_failure: TerminalQuotaError → quota"
+
+printf 'API quota exhausted for this project\n' > "${tmp}/pf-quota-exhausted"
+assert_eq "quota" "$(classify_periodic_failure "${tmp}/pf-quota-exhausted")" \
+  "classify_periodic_failure: quota exhausted → quota"
+
+printf 'billing_hard_limit_reached: spend limit exceeded\n' > "${tmp}/pf-billing"
+assert_eq "quota" "$(classify_periodic_failure "${tmp}/pf-billing")" \
+  "classify_periodic_failure: billing_hard_limit_reached → quota"
+
+printf 'You have exhausted your capacity for this month\n' > "${tmp}/pf-capacity"
+assert_eq "quota" "$(classify_periodic_failure "${tmp}/pf-capacity")" \
+  "classify_periodic_failure: You have exhausted your capacity → quota"
+
+printf 'RESOURCE_EXHAUSTED: daily compute quota exceeded\n' > "${tmp}/pf-resource-exhausted"
+assert_eq "quota" "$(classify_periodic_failure "${tmp}/pf-resource-exhausted")" \
+  "classify_periodic_failure: RESOURCE_EXHAUSTED → quota"
+
+# case-insensitive quota match
+printf 'terminalquotaerror\n' > "${tmp}/pf-quota-lower"
+assert_eq "quota" "$(classify_periodic_failure "${tmp}/pf-quota-lower")" \
+  "classify_periodic_failure: lower-case TerminalQuotaError → quota"
+
+# --- rate_limited patterns ---
+
+printf 'HTTP/1.1 429 Too Many Requests\n' > "${tmp}/pf-429"
+assert_eq "rate_limited" "$(classify_periodic_failure "${tmp}/pf-429")" \
+  "classify_periodic_failure: 429 Too Many Requests → rate_limited"
+
+printf 'error: rate_limit_exceeded on this endpoint\n' > "${tmp}/pf-rle"
+assert_eq "rate_limited" "$(classify_periodic_failure "${tmp}/pf-rle")" \
+  "classify_periodic_failure: rate_limit_exceeded → rate_limited"
+
+printf 'rate_limit_error: too many requests\n' > "${tmp}/pf-rle2"
+assert_eq "rate_limited" "$(classify_periodic_failure "${tmp}/pf-rle2")" \
+  "classify_periodic_failure: rate_limit_error → rate_limited"
+
+printf 'overloaded_error: server overloaded\n' > "${tmp}/pf-overloaded"
+assert_eq "rate_limited" "$(classify_periodic_failure "${tmp}/pf-overloaded")" \
+  "classify_periodic_failure: overloaded_error → rate_limited"
+
+# case-insensitive rate_limited match
+printf 'OVERLOADED_ERROR\n' > "${tmp}/pf-overloaded-upper"
+assert_eq "rate_limited" "$(classify_periodic_failure "${tmp}/pf-overloaded-upper")" \
+  "classify_periodic_failure: upper-case OVERLOADED_ERROR → rate_limited"
+
+# --- quota takes priority over rate_limited ---
+# A log that contains both a quota pattern and a rate-limit pattern must
+# produce quota, because quota is checked first.
+
+printf 'TerminalQuotaError\n429 Too Many Requests\n' > "${tmp}/pf-both"
+assert_eq "quota" "$(classify_periodic_failure "${tmp}/pf-both")" \
+  "classify_periodic_failure: quota pattern takes priority over rate_limited"
+
+# --- unknown pattern → empty ---
+
+printf 'Some unexpected failure message\n' > "${tmp}/pf-unknown"
+assert_eq "" "$(classify_periodic_failure "${tmp}/pf-unknown")" \
+  "classify_periodic_failure: unknown pattern → empty"
+
 echo "All lib-classify.sh tests passed."

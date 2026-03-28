@@ -199,9 +199,15 @@ Tune loop behavior in `.env`:
 - `PERIODIC_INTERVAL_SECS` — interval between runs (default: 3600s)
 - `PERIODIC_JITTER_SECS` — random variance (default: 300s)
 - `MAX_CONSECUTIVE_FAILURES` — exit after N failures (default: 5)
-- `PERIODIC_AGENT_FAILURE_BACKOFF_BASE_SECS` — initial cooldown for a failing agent (default: 300s)
-- `PERIODIC_AGENT_FAILURE_BACKOFF_MAX_SECS` — max cooldown cap for repeated failures (default: 3600s)
+- `PERIODIC_AGENT_FAILURE_BACKOFF_BASE_SECS` — initial cooldown for unclassified failures (default: 300s)
+- `PERIODIC_AGENT_FAILURE_BACKOFF_MAX_SECS` — max cooldown cap for unclassified failures (default: 3600s)
 - `PERIODIC_AGENT_FAILURE_BACKOFF_JITTER_PCT` — random jitter applied to cooldowns (default: 15)
+- `QUOTA_BACKOFF_FLOOR_SECS` — backoff floor when a run fails with a quota-exhaustion pattern (`TerminalQuotaError`, `billing_hard_limit_reached`, `RESOURCE_EXHAUSTED`, etc.); default 7200s (2h)
+- `QUOTA_BACKOFF_MAX_SECS` — backoff ceiling for quota failures (default: 86400s / 24h)
+- `QUOTA_BACKOFF_JITTER_PCT` — jitter for quota backoff (default: 15)
+- `RATE_LIMIT_BACKOFF_FLOOR_SECS` — backoff floor for transient rate-limit failures (`429 Too Many Requests`, `rate_limit_exceeded`, `overloaded_error`); default 300s
+- `RATE_LIMIT_BACKOFF_MAX_SECS` — backoff ceiling for rate-limit failures (default: 1800s)
+- `RATE_LIMIT_BACKOFF_JITTER_PCT` — jitter for rate-limit backoff (default: 20)
 
 **Loop + mention watching** — periodic runs plus respond to @mentions:
 
