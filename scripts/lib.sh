@@ -384,7 +384,7 @@ validate_agent_id() {
 
   case "$agent_id" in
     ''|*[!a-zA-Z0-9_-]*)
-      echo "Invalid AGENT_ID: ${agent_id}" >&2
+      echo "Invalid AGENT_ID: ${agent_id}. Use only letters, digits, hyphens, and underscores." >&2
       exit 1
       ;;
   esac
@@ -417,7 +417,7 @@ task_id_is_valid() {
 validate_task_id() {
   local task_id="$1"
   if ! task_id_is_valid "$task_id"; then
-    echo "Invalid task_id: ${task_id}" >&2
+    echo "Invalid task_id: ${task_id}. Use only letters, digits, hyphens, underscores, and dots (no bare . or ..)." >&2
     exit 1
   fi
 }
