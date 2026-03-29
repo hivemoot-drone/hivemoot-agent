@@ -123,6 +123,11 @@ classify_run_failure_from_file() {
 # and prints one of two classification tokens. Prints nothing when no known
 # pattern is found; the caller should fall back to the default failure backoff.
 #
+# Only the last LOG_TAIL_LINES (default 200) lines of the log are scanned.
+# Provider-fatal errors land at the end of a run after the CLI exits.
+# Limiting the scan window prevents false positives from agent output that
+# quotes code or issues containing these token strings.
+#
 # Return values (via stdout):
 #   quota        — daily/billing quota exhausted; use a long backoff (hours)
 #   rate_limited — transient rate limit; use a short backoff (minutes)
@@ -141,31 +146,122 @@ classify_run_failure_from_file() {
 #   $1 — path to a run log file
 classify_periodic_failure() {
   local file="$1"
+  local tail_lines="${LOG_TAIL_LINES:-200}"
 
   [ -s "$file" ] || return 0
 
   # Quota-exhaustion patterns: terminal — long backoff (hours to days)
-  if grep -qiF \
+  if tail -n "$tail_lines" "$file" 2>/dev/null | grep -qiF \
        -e 'TerminalQuotaError' \
        -e 'quota exhausted' \
        -e 'billing_hard_limit_reached' \
        -e 'You have exhausted your capacity' \
-       -e 'RESOURCE_EXHAUSTED' \
-       "$file" 2>/dev/null; then
+       -e 'RESOURCE_EXHAUSTED'; then
     printf 'quota'
     return 0
   fi
 
   # Rate-limit patterns: transient — short backoff (minutes)
-  if grep -qiF \
+  if tail -n "$tail_lines" "$file" 2>/dev/null | grep -qiF \
        -e '429 Too Many Requests' \
        -e 'rate_limit_exceeded' \
        -e 'rate_limit_error' \
-       -e 'overloaded_error' \
-       "$file" 2>/dev/null; then
+       -e 'overloaded_error'; then
     printf 'rate_limited'
     return 0
   fi
 
   return 0
+}
+
+# Exponential backoff for quota-exhaustion failures (daily limit / billing cap).
+#
+# Arguments (all required):
+#   $1 — failure_count : number of consecutive failures (1-based)
+#   $2 — floor_secs   : minimum delay in seconds
+#   $3 — max_secs     : maximum delay ceiling in seconds
+#   $4 — jitter_pct   : percentage of delay to add as random ±jitter (0 to disable)
+calculate_quota_backoff_delay() {
+  local failure_count="$1"
+  local floor_secs="$2"
+  local max_secs="$3"
+  local jitter_pct="$4"
+  local delay="$floor_secs"
+
+  if [ "$failure_count" -le 0 ] || [ "$delay" -le 0 ]; then
+    echo 0
+    return
+  fi
+
+  for ((attempt = 1; attempt < failure_count; attempt++)); do
+    if [ "$delay" -ge "$max_secs" ]; then
+      delay="$max_secs"
+      break
+    fi
+    delay=$((delay * 2))
+  done
+
+  if [ "$delay" -gt "$max_secs" ]; then
+    delay="$max_secs"
+  fi
+
+  if [ "$jitter_pct" -gt 0 ] && [ "$delay" -gt 0 ]; then
+    local jitter=$((delay * jitter_pct / 100))
+    if [ "$jitter" -gt 0 ]; then
+      local span=$((jitter * 2 + 1))
+      local offset=$((RANDOM % span - jitter))
+      delay=$((delay + offset))
+      if [ "$delay" -lt 1 ]; then
+        delay=1
+      fi
+    fi
+  fi
+
+  echo "$delay"
+}
+
+# Exponential backoff for transient rate-limit failures (429 / rate_limit_exceeded).
+#
+# Arguments (all required):
+#   $1 — failure_count : number of consecutive failures (1-based)
+#   $2 — floor_secs   : minimum delay in seconds
+#   $3 — max_secs     : maximum delay ceiling in seconds
+#   $4 — jitter_pct   : percentage of delay to add as random ±jitter (0 to disable)
+calculate_rate_limit_backoff_delay() {
+  local failure_count="$1"
+  local floor_secs="$2"
+  local max_secs="$3"
+  local jitter_pct="$4"
+  local delay="$floor_secs"
+
+  if [ "$failure_count" -le 0 ] || [ "$delay" -le 0 ]; then
+    echo 0
+    return
+  fi
+
+  for ((attempt = 1; attempt < failure_count; attempt++)); do
+    if [ "$delay" -ge "$max_secs" ]; then
+      delay="$max_secs"
+      break
+    fi
+    delay=$((delay * 2))
+  done
+
+  if [ "$delay" -gt "$max_secs" ]; then
+    delay="$max_secs"
+  fi
+
+  if [ "$jitter_pct" -gt 0 ] && [ "$delay" -gt 0 ]; then
+    local jitter=$((delay * jitter_pct / 100))
+    if [ "$jitter" -gt 0 ]; then
+      local span=$((jitter * 2 + 1))
+      local offset=$((RANDOM % span - jitter))
+      delay=$((delay + offset))
+      if [ "$delay" -lt 1 ]; then
+        delay=1
+      fi
+    fi
+  fi
+
+  echo "$delay"
 }

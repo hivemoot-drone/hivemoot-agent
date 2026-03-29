@@ -409,82 +409,6 @@ calculate_agent_backoff_delay() {
   echo "$delay"
 }
 
-# Exponential backoff for quota-exhaustion failures (daily limit / billing cap).
-# Uses quota_backoff_floor_secs / quota_backoff_max_secs / quota_backoff_jitter_pct.
-calculate_quota_backoff_delay() {
-  local failure_count="$1"
-  local delay="$quota_backoff_floor_secs"
-
-  if [ "$failure_count" -le 0 ] || [ "$delay" -le 0 ]; then
-    echo 0
-    return
-  fi
-
-  for ((attempt = 1; attempt < failure_count; attempt++)); do
-    if [ "$delay" -ge "$quota_backoff_max_secs" ]; then
-      delay="$quota_backoff_max_secs"
-      break
-    fi
-    delay=$((delay * 2))
-  done
-
-  if [ "$delay" -gt "$quota_backoff_max_secs" ]; then
-    delay="$quota_backoff_max_secs"
-  fi
-
-  if [ "$quota_backoff_jitter_pct" -gt 0 ] && [ "$delay" -gt 0 ]; then
-    local jitter=$((delay * quota_backoff_jitter_pct / 100))
-    if [ "$jitter" -gt 0 ]; then
-      local span=$((jitter * 2 + 1))
-      local offset=$((RANDOM % span - jitter))
-      delay=$((delay + offset))
-      if [ "$delay" -lt 1 ]; then
-        delay=1
-      fi
-    fi
-  fi
-
-  echo "$delay"
-}
-
-# Exponential backoff for transient rate-limit failures (429 / rate_limit_exceeded).
-# Uses rate_limit_backoff_floor_secs / rate_limit_backoff_max_secs / rate_limit_backoff_jitter_pct.
-calculate_rate_limit_backoff_delay() {
-  local failure_count="$1"
-  local delay="$rate_limit_backoff_floor_secs"
-
-  if [ "$failure_count" -le 0 ] || [ "$delay" -le 0 ]; then
-    echo 0
-    return
-  fi
-
-  for ((attempt = 1; attempt < failure_count; attempt++)); do
-    if [ "$delay" -ge "$rate_limit_backoff_max_secs" ]; then
-      delay="$rate_limit_backoff_max_secs"
-      break
-    fi
-    delay=$((delay * 2))
-  done
-
-  if [ "$delay" -gt "$rate_limit_backoff_max_secs" ]; then
-    delay="$rate_limit_backoff_max_secs"
-  fi
-
-  if [ "$rate_limit_backoff_jitter_pct" -gt 0 ] && [ "$delay" -gt 0 ]; then
-    local jitter=$((delay * rate_limit_backoff_jitter_pct / 100))
-    if [ "$jitter" -gt 0 ]; then
-      local span=$((jitter * 2 + 1))
-      local offset=$((RANDOM % span - jitter))
-      delay=$((delay + offset))
-      if [ "$delay" -lt 1 ]; then
-        delay=1
-      fi
-    fi
-  fi
-
-  echo "$delay"
-}
-
 # ── Mention Watchers (one per agent, only when WATCH_MENTIONS=1) ──
 
 start_mention_watcher() {
@@ -757,10 +681,10 @@ start_agent_periodic_scheduler() {
       local backoff_delay=""
       case "$failure_class" in
         quota)
-          backoff_delay="$(calculate_quota_backoff_delay "$consecutive_failures")"
+          backoff_delay="$(calculate_quota_backoff_delay "$consecutive_failures" "$quota_backoff_floor_secs" "$quota_backoff_max_secs" "$quota_backoff_jitter_pct")"
           ;;
         rate_limited)
-          backoff_delay="$(calculate_rate_limit_backoff_delay "$consecutive_failures")"
+          backoff_delay="$(calculate_rate_limit_backoff_delay "$consecutive_failures" "$rate_limit_backoff_floor_secs" "$rate_limit_backoff_max_secs" "$rate_limit_backoff_jitter_pct")"
           ;;
         *)
           backoff_delay="$(calculate_agent_backoff_delay "$consecutive_failures")"

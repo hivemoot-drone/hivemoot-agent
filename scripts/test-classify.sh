@@ -239,4 +239,73 @@ printf 'Some unexpected failure message\n' > "${tmp}/pf-unknown"
 assert_eq "" "$(classify_periodic_failure "${tmp}/pf-unknown")" \
   "classify_periodic_failure: unknown pattern → empty"
 
+# --- tail-window false-positive regression ---
+# A 601-line log with RESOURCE_EXHAUSTED on line 301 must not match,
+# because the classifier only scans the last 200 lines (lines 402-601).
+{
+  for i in {1..300}; do printf 'normal run output line %d\n' "$i"; done
+  printf 'RESOURCE_EXHAUSTED: some quota error quoted from repo code\n'
+  for i in {302..601}; do printf 'normal run output line %d\n' "$i"; done
+} > "${tmp}/pf-false-positive"
+assert_eq "" "$(LOG_TAIL_LINES=200 classify_periodic_failure "${tmp}/pf-false-positive")" \
+  "classify_periodic_failure: quota token in head of log, not tail → empty (no false positive)"
+
+# --- quota token in tail of 601-line log is matched ---
+# Lines 1-449 are clean; TerminalQuotaError is on line 450 (within the last 200).
+{
+  for i in {1..449}; do printf 'normal run output line %d\n' "$i"; done
+  printf 'TerminalQuotaError\n'
+  for i in {451..601}; do printf 'normal run output line %d\n' "$i"; done
+} > "${tmp}/pf-tail-match"
+assert_eq "quota" "$(LOG_TAIL_LINES=200 classify_periodic_failure "${tmp}/pf-tail-match")" \
+  "classify_periodic_failure: quota token in tail of 601-line log → quota"
+
+# ── calculate_quota_backoff_delay() ────────────────────────────────────────────
+
+echo "Running calculate_quota_backoff_delay() tests"
+
+# first failure → floor
+assert_eq "7200" "$(calculate_quota_backoff_delay 1 7200 86400 0)" \
+  "calculate_quota_backoff_delay: count=1 → floor (7200)"
+
+# second failure → 2× floor
+assert_eq "14400" "$(calculate_quota_backoff_delay 2 7200 86400 0)" \
+  "calculate_quota_backoff_delay: count=2 → 2× floor (14400)"
+
+# large count → capped at max
+assert_eq "86400" "$(calculate_quota_backoff_delay 100 7200 86400 0)" \
+  "calculate_quota_backoff_delay: large count → capped at max (86400)"
+
+# count=0 → 0
+assert_eq "0" "$(calculate_quota_backoff_delay 0 7200 86400 0)" \
+  "calculate_quota_backoff_delay: count=0 → 0"
+
+# floor=0 → 0
+assert_eq "0" "$(calculate_quota_backoff_delay 1 0 86400 0)" \
+  "calculate_quota_backoff_delay: floor=0 → 0"
+
+# ── calculate_rate_limit_backoff_delay() ───────────────────────────────────────
+
+echo "Running calculate_rate_limit_backoff_delay() tests"
+
+# first failure → floor
+assert_eq "300" "$(calculate_rate_limit_backoff_delay 1 300 1800 0)" \
+  "calculate_rate_limit_backoff_delay: count=1 → floor (300)"
+
+# second failure → 2× floor
+assert_eq "600" "$(calculate_rate_limit_backoff_delay 2 300 1800 0)" \
+  "calculate_rate_limit_backoff_delay: count=2 → 2× floor (600)"
+
+# large count → capped at max
+assert_eq "1800" "$(calculate_rate_limit_backoff_delay 100 300 1800 0)" \
+  "calculate_rate_limit_backoff_delay: large count → capped at max (1800)"
+
+# count=0 → 0
+assert_eq "0" "$(calculate_rate_limit_backoff_delay 0 300 1800 0)" \
+  "calculate_rate_limit_backoff_delay: count=0 → 0"
+
+# floor=0 → 0
+assert_eq "0" "$(calculate_rate_limit_backoff_delay 1 0 1800 0)" \
+  "calculate_rate_limit_backoff_delay: floor=0 → 0"
+
 echo "All lib-classify.sh tests passed."
