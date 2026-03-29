@@ -2833,7 +2833,7 @@ run_quota_backoff_shutdown_cancelled_case() {
     AGENT_TIMEOUT_SECONDS="120" \
     PERIODIC_INTERVAL_SECS="3600" \
     PERIODIC_JITTER_SECS="0" \
-    QUOTA_BACKOFF_FLOOR_SECS="300" \
+    QUOTA_BACKOFF_FLOOR_SECS="0" \
     QUOTA_BACKOFF_JITTER_PCT="0" \
     bash "${repo_root}/scripts/controller.sh" >"$controller_log" 2>&1 &
   controller_pid=$!
@@ -2861,12 +2861,20 @@ run_quota_backoff_shutdown_cancelled_case() {
   # so it cannot have passed the shutdown gate yet.
   : > "$shutdown_flag"
 
-  # Release builder's flock. The subshell unblocks, sees the shutdown flag, and
-  # returns shutdown_cancelled_exit_code without clearing the backoff file.
+  # Release builder's flock. The subshell unblocks, sees the shutdown flag, writes
+  # the shutdown-cancelled marker, and returns 1 without clearing the backoff file.
   kill "$flock_holder_pid" 2>/dev/null || true
   wait "$flock_holder_pid" 2>/dev/null || true
 
   wait "$controller_pid" || true
+
+  # Confirm the shutdown-cancel path was actually exercised (not the launch-time
+  # deferral path). If builder was deferred before run_job() started, the log
+  # would say "Periodic trigger deferred" rather than "Job cancelled due to shutdown".
+  if ! grep -q "Job cancelled due to shutdown" "$controller_log"; then
+    sed 's/^/  /' "$controller_log" >&2 || true
+    fail "expected 'Job cancelled due to shutdown' in controller log — shutdown-cancel path was not reached"
+  fi
 
   # Backoff file must still be present — a shutdown-cancelled job that never
   # ran must not clear quota/auth backoff state.

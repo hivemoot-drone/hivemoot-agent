@@ -172,6 +172,15 @@ EOF_TIMEOUT
   chmod 600 "$marker_file" 2>/dev/null || true
 }
 
+mark_shutdown_cancelled() {
+  local job_run_dir="$1"
+  local marker_file="${job_run_dir}/shutdown-cancelled"
+
+  mkdir -p "$job_run_dir"
+  : > "$marker_file"
+  chmod 600 "$marker_file" 2>/dev/null || true
+}
+
 read_global_slot_timeout_secs() {
   local marker_file="$1"
 
@@ -1527,6 +1536,7 @@ record_job_completion() {
   local state_file="${pid_to_state_file[$pid]:-}"
   local processing_file="${pid_to_processing_file[$pid]:-}"
   local global_slot_timeout_file="${runs_root}/${job_id}/global-slot-timeout"
+  local shutdown_cancelled_file="${runs_root}/${job_id}/shutdown-cancelled"
   local global_slot_timeout_secs=""
   local final_file=""
   local final_state="failed"
@@ -1572,9 +1582,10 @@ record_job_completion() {
     return 0
   fi
 
-  if [ "$exit_code" -eq "$shutdown_cancelled_exit_code" ]; then
+  if [ -f "$shutdown_cancelled_file" ]; then
     # Job was queued but never ran — controller received a shutdown signal.
     # Do not clear backoff state or count this as a success or failure.
+    rm -f "$shutdown_cancelled_file" 2>/dev/null || true
     log "Job cancelled due to shutdown: id=${job_id} repo=${repo} agent=${agent_id}"
     if [ -n "$processing_file" ] && [ -f "$processing_file" ]; then
       mv -f "$processing_file" "${processing_file%.processing}.cancelled" 2>/dev/null || true
@@ -1750,9 +1761,10 @@ run_job() {
 
   if [ "$shutdown_requested" -ne 0 ] || [ -f "$shutdown_flag_file" ]; then
     log "Skipping queued job due to shutdown: id=${job_id} repo=${repo} agent=${agent_id}"
+    mark_shutdown_cancelled "$job_run_dir"
     write_job_status "$job_workspace" "$job_id" "$repo" "$agent_id" "$trigger_type" "cancelled" "-"
     release_global_slot
-    return "$shutdown_cancelled_exit_code"
+    return 1
   fi
 
   write_job_status "$job_workspace" "$job_id" "$repo" "$agent_id" "$trigger_type" "running" "-"
@@ -2333,7 +2345,6 @@ queue_maintenance_interval_secs="${QUEUE_MAINTENANCE_INTERVAL_SECS:-60}"
 heartbeat_interval_secs="${HEARTBEAT_INTERVAL_SECS:-1800}"
 shutdown_grace_secs="${CONTROLLER_SHUTDOWN_GRACE_SECS:-30}"
 global_slot_timeout_exit_code=124
-shutdown_cancelled_exit_code=126
 quota_backoff_floor_secs="${QUOTA_BACKOFF_FLOOR_SECS:-7200}"
 quota_backoff_max_secs="${QUOTA_BACKOFF_MAX_SECS:-86400}"
 quota_backoff_jitter_pct="${QUOTA_BACKOFF_JITTER_PCT:-15}"
