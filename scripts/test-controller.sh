@@ -2783,6 +2783,101 @@ run_quota_backoff_deferral_case() {
 }
 
 # Test 3: a successful mention job clears an existing backoff file.
+run_quota_backoff_shutdown_cancelled_case() {
+  local repo_root="$1"
+  local case_dir="$2"
+  local lock_dir="${case_dir}/locks"
+  local workspace="${case_dir}/workspace"
+  local backoff_file="${workspace}/agent-backoff/builder"
+  local shutdown_flag="${workspace}/shutdown.requested"
+  local controller_log="${case_dir}/controller.log"
+  local run_log="${case_dir}/mock-state/docker-run.log"
+  local builder_lock_file="${lock_dir}/agent-owner_repo__builder.lock"
+  local flock_holder_pid=0
+  local controller_pid=0
+  local deadline=0
+
+  mkdir -p "${workspace}/agent-backoff" "$lock_dir"
+  setup_mock_docker "${case_dir}/mock-bin"
+
+  # Pre-write a quota backoff file for builder.
+  local future_epoch
+  future_epoch=$(( $(date +%s) + 86400 ))
+  printf 'backoff_until=%s\nconsecutive=1\n' "$future_epoch" > "$backoff_file"
+
+  # Hold builder's per-agent flock from a separate process. Builder's run_job
+  # subshell will block at "flock 200" until we release it, giving a
+  # deterministic window to write the shutdown flag before the subshell can
+  # reach the shutdown gate.
+  : > "$builder_lock_file"
+  (flock -x 200; sleep 9999) 200>"$builder_lock_file" &
+  flock_holder_pid=$!
+  # Give the background subshell time to acquire the lock.
+  sleep 0.2
+
+  env -i \
+    PATH="${case_dir}/mock-bin:${PATH}" \
+    HOME="${case_dir}/home" \
+    MOCK_DOCKER_STATE_DIR="${case_dir}/mock-state" \
+    MOCK_DOCKER_WAIT_SLEEP_SECS="0" \
+    TARGET_REPO="owner/repo" \
+    CONTROLLER_RUN_MODE="once" \
+    CONTROLLER_MAX_WORKERS="2" \
+    CONTROLLER_WORKSPACE_ROOT="$workspace" \
+    CONTROLLER_LOCK_DIR="$lock_dir" \
+    WORKER_IMAGE="hivemoot-agent:test" \
+    AGENT_ID_01="worker" \
+    AGENT_GITHUB_TOKEN_01="token-1" \
+    AGENT_ID_02="builder" \
+    AGENT_GITHUB_TOKEN_02="token-2" \
+    AGENT_TIMEOUT_SECONDS="120" \
+    PERIODIC_INTERVAL_SECS="3600" \
+    PERIODIC_JITTER_SECS="0" \
+    QUOTA_BACKOFF_FLOOR_SECS="300" \
+    QUOTA_BACKOFF_JITTER_PCT="0" \
+    bash "${repo_root}/scripts/controller.sh" >"$controller_log" 2>&1 &
+  controller_pid=$!
+
+  # Wait for worker's docker run (worker runs normally; builder is blocked on flock).
+  deadline=$((SECONDS + 15))
+  while true; do
+    if [ -f "$run_log" ] && [ "$(wc -l < "$run_log" | tr -d '[:space:]')" -ge 1 ]; then
+      break
+    fi
+    if ! kill -0 "$controller_pid" 2>/dev/null; then
+      sed 's/^/  /' "$controller_log" >&2 || true
+      kill "$flock_holder_pid" 2>/dev/null || true
+      fail "controller exited before first launch in shutdown-cancelled backoff test"
+    fi
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      sed 's/^/  /' "$controller_log" >&2 || true
+      kill "$flock_holder_pid" 2>/dev/null || true
+      fail "timed out waiting for first docker launch in shutdown-cancelled backoff test"
+    fi
+    sleep 0.1
+  done
+
+  # Write the shutdown flag now — builder's subshell is still blocked on flock
+  # so it cannot have passed the shutdown gate yet.
+  : > "$shutdown_flag"
+
+  # Release builder's flock. The subshell unblocks, sees the shutdown flag, and
+  # returns shutdown_cancelled_exit_code without clearing the backoff file.
+  kill "$flock_holder_pid" 2>/dev/null || true
+  wait "$flock_holder_pid" 2>/dev/null || true
+
+  wait "$controller_pid" || true
+
+  # Backoff file must still be present — a shutdown-cancelled job that never
+  # ran must not clear quota/auth backoff state.
+  if [ ! -f "$backoff_file" ]; then
+    sed 's/^/  /' "$controller_log" >&2 || true
+    fail "backoff file must not be cleared by a shutdown-cancelled job"
+  fi
+
+  echo "PASS: shutdown-cancelled queued job does not clear quota backoff"
+}
+
 run_quota_backoff_clear_on_mention_success_case() {
   local repo_root="$1"
   local case_dir="$2"
@@ -2885,4 +2980,5 @@ run_task_failure_report_classified_error_case "$repo_root" "${tmpdir}/task-failu
 run_quota_backoff_write_case "$repo_root" "${tmpdir}/quota-backoff-write"
 run_quota_backoff_deferral_case "$repo_root" "${tmpdir}/quota-backoff-deferral"
 run_quota_backoff_clear_on_mention_success_case "$repo_root" "${tmpdir}/quota-backoff-clear-mention"
+run_quota_backoff_shutdown_cancelled_case "$repo_root" "${tmpdir}/quota-backoff-shutdown-cancelled"
 echo "PASS: controller script checks"
