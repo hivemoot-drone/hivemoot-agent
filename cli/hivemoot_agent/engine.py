@@ -283,7 +283,7 @@ class Engine:
         # Print the agent's response to stdout so callers can capture it.
         response = ""
         if exit_code == 0 and stdout:
-            response = _extract_response(stdout)
+            response = _extract_response(stdout, provider)
             if response:
                 print(response, flush=True)
 
@@ -426,7 +426,7 @@ class Engine:
         # response from stdout so on_job_finished can deliver it.
         response = ""
         if provider != "claude" and stdout:
-            response = _extract_response(stdout)
+            response = _extract_response(stdout, provider)
 
         result = AgentResult(exit_code=exit_code, response=response)
         plugin.on_job_finished(job, result, config)
@@ -606,12 +606,23 @@ def _load_file_secrets() -> None:
         )
 
 
-def _extract_response(output: str) -> str:
-    """Extract the agent's response from stream-json or plain output."""
+def _extract_response(output: str, provider: str = "claude") -> str:
+    """Extract the agent's response from provider output.
+
+    Dispatch is provider-aware:
+    - claude: parses stream-json for {"type":"result"} events
+    - codex:  parses stream-json for {"type":"item.completed"} events
+    - gemini, kilo, opencode: plain-text output, returned as-is
+    - unknown: falls back to longest non-JSON line
+    """
     if not output:
         return ""
 
-    # Try structured extraction (Claude result, Codex item.completed).
+    # Plain-text providers — return the full output, stripped.
+    if provider in ("gemini", "kilo", "opencode"):
+        return output.strip()
+
+    # Structured providers (claude, codex) — parse stream-json.
     result = ""
     for line in output.strip().split("\n"):
         line = line.strip()
@@ -634,7 +645,7 @@ def _extract_response(output: str) -> str:
     if result:
         return result
 
-    # Fallback: longest non-JSON line.
+    # Fallback: longest non-JSON line (handles unknown providers).
     best = ""
     for line in output.strip().split("\n")[-50:]:
         stripped = line.strip()

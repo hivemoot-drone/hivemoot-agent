@@ -72,6 +72,62 @@ def test_extract_response_provider_default(tmp_path):
     assert args.provider == "claude"
 
 
+def test_extract_response_gemini_plain_text(tmp_path):
+    """Gemini outputs plain text — not JSON lines."""
+    log_file = tmp_path / "agent.log"
+    log_file.write_text("Here is the Gemini response.\n")
+    args = build_parser().parse_args([
+        "extract", "response",
+        "--provider", "gemini",
+        "--log-file", str(log_file),
+    ])
+    import io
+    from contextlib import redirect_stdout
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = args.func(args)
+    assert rc == 0
+    assert buf.getvalue() == "Here is the Gemini response."
+
+
+def test_extract_response_opencode_plain_text(tmp_path):
+    """OpenCode outputs plain text — not JSON lines."""
+    log_file = tmp_path / "agent.log"
+    log_file.write_text("OpenCode result here.\n")
+    args = build_parser().parse_args([
+        "extract", "response",
+        "--provider", "opencode",
+        "--log-file", str(log_file),
+    ])
+    import io
+    from contextlib import redirect_stdout
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = args.func(args)
+    assert rc == 0
+    assert buf.getvalue() == "OpenCode result here."
+
+
+def test_extract_response_gemini_not_swallowed_by_json_heuristic(tmp_path):
+    """Gemini plain text that starts with { must not be swallowed."""
+    log_file = tmp_path / "agent.log"
+    # A valid JSON-looking line that is the actual response text.
+    log_file.write_text('{"note": "this is the response"}\n')
+    args = build_parser().parse_args([
+        "extract", "response",
+        "--provider", "gemini",
+        "--log-file", str(log_file),
+    ])
+    import io
+    from contextlib import redirect_stdout
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = args.func(args)
+    assert rc == 0
+    # For gemini, return the raw output stripped — don't filter it.
+    assert buf.getvalue() == '{"note": "this is the response"}'
+
+
 if __name__ == "__main__":
     import inspect
 

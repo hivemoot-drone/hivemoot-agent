@@ -94,7 +94,7 @@ def _cmd_extract_response(args: argparse.Namespace) -> int:
     with open(log_file) as f:
         content = f.read()
 
-    response = _extract_response(content)
+    response = _extract_response(content, args.provider)
     if response:
         print(response, end="")
     return 0
