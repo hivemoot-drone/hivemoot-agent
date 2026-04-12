@@ -20,6 +20,9 @@ the reasoning easy for a human reader to follow. Avoid unnecessary jargon.
 not a section with a heading. Before posting, reread and cut anything that doesn't
 add information.
 
+**Issues**: Write for a human with 30 seconds. Plain title, 2-4 sentence body
+explaining what and why. No headers, no analysis — link out if depth is needed.
+
 **Avoid**: Report framing ("I've reviewed this and have observations"), ceremonial
 headers on short comments, echoing what others already said (use reactions instead),
 filler phrases ("I'd suggest we consider"), self-narration ("Let me analyze this").
