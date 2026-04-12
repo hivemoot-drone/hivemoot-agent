@@ -101,3 +101,23 @@ assert_fails_with \
   env TARGET_REPO=owner/repo $workload_env 'JOB_ID=job;id' bash scripts/run-once.sh
 
 echo "PASS: JOB_ID validation checks"
+
+echo "Running task_id validation checks"
+
+assert_fails_with \
+  "Invalid task_id: bad/slash. Use only letters, digits, hyphens, underscores, and dots (no bare . or ..)." \
+  bash -c "source '${repo_root}/shared/lib.sh' && validate_task_id 'bad/slash'"
+
+assert_fails_with \
+  "Invalid task_id: .. Use only letters, digits, hyphens, underscores, and dots (no bare . or ..)." \
+  bash -c "source '${repo_root}/shared/lib.sh' && validate_task_id '.'"
+
+assert_fails_with \
+  "Invalid task_id: ... Use only letters, digits, hyphens, underscores, and dots (no bare . or ..)." \
+  bash -c "source '${repo_root}/shared/lib.sh' && validate_task_id '..'"
+
+assert_fails_with \
+  "Invalid task_id: bad id. Use only letters, digits, hyphens, underscores, and dots (no bare . or ..)." \
+  bash -c "source '${repo_root}/shared/lib.sh' && validate_task_id 'bad id'"
+
+echo "PASS: task_id validation checks"
