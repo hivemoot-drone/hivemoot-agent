@@ -4,6 +4,7 @@
 Commands:
     hivemoot-agent run                Daemon mode (triggers poll continuously)
     hivemoot-agent oneshot            Run agent once and exit
+    hivemoot-agent extract response   Extract agent response from a log file
     hivemoot-agent plugin list        List available plugins
     hivemoot-agent plugin doctor X    Validate a plugin's config
     hivemoot-agent doctor             Health check
@@ -39,6 +40,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     oneshot.set_defaults(func=_cmd_oneshot)
 
+    # extract — parse agent output
+    extract = sub.add_parser(
+        "extract", help="Extract data from agent log output"
+    )
+    extract_sub = extract.add_subparsers(dest="extract_command")
+    extract_response = extract_sub.add_parser(
+        "response", help="Extract the agent's text response from a log file"
+    )
+    extract_response.add_argument(
+        "--provider", default="claude",
+        help="Agent provider (claude, codex, gemini, kilo, opencode)",
+    )
+    extract_response.add_argument(
+        "--log-file", required=True,
+        help="Path to the agent log file",
+    )
+    extract_response.set_defaults(func=_cmd_extract_response)
+    extract.set_defaults(func=lambda args: (
+        extract.print_help() or 0
+    ))
+
     # plugin
     from hivemoot_agent.plugins.commands import register_plugin_commands
     register_plugin_commands(sub)
@@ -57,6 +79,25 @@ def _cmd_run(args: argparse.Namespace) -> int:
 def _cmd_oneshot(args: argparse.Namespace) -> int:
     from hivemoot_agent.engine import Engine
     return Engine().oneshot(prompt=args.prompt or None)
+
+
+def _cmd_extract_response(args: argparse.Namespace) -> int:
+    """Print the agent's text response extracted from a log file."""
+    import os
+    from hivemoot_agent.engine import _extract_response
+
+    log_file = args.log_file
+    if not os.path.isfile(log_file):
+        print(f"[extract] file not found: {log_file}", file=sys.stderr)
+        return 1
+
+    with open(log_file) as f:
+        content = f.read()
+
+    response = _extract_response(content)
+    if response:
+        print(response, end="")
+    return 0
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
