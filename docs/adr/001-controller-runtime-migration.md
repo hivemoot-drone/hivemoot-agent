@@ -131,6 +131,9 @@ Buildkite rewrote their Ruby agent in Go for exactly the same reasons that would
 our migration: single binary deployment (no interpreter), reduced memory footprint
 (70 MB–3.5 GB Ruby → 1.5–3.3 MB Go), and a concurrency model that scales with job
 count. Their trigger was installation friction and memory growth, not feature requests.
+Memory figures from the v3.0 release post
+([buildkite/agent CHANGELOG](https://github.com/buildkite/agent/blob/main/CHANGELOG.md),
+agent v3.0.0, 2017-09-07).
 
 **Python** is acceptable if the team has a strong preference, but we would still shell
 out for Docker operations via `subprocess.run("docker run ...")`, which means the main
